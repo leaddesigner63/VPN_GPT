@@ -16,12 +16,12 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: 45.92.174.166
+          host: 45.92.174.166        # <-- Укажи свой IP
           username: root
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /opt/vpn-bot
             git pull origin main
             systemctl restart vpn-bot
+            systemctl status vpn-bot --no-pager
             echo "✅ VPN Bot redeployed successfully!"
-
