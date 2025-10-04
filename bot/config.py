@@ -1,0 +1,4 @@
+BOT_TOKEN = "8116903113:AAFUHEWJ7UTLCjEuxgN0YM7OyF5Xe5U4xrU"
+SERVER_IP = "45.92.174.166"
+XRAY_CONFIG = "/usr/local/etc/xray/config.json"
+
