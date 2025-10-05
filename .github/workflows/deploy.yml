@@ -10,18 +10,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to VPS
+      - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: 45.92.174.166        # <-- Укажи свой IP
+          host: 45.92.174.166
           username: root
-          key: ${{ secrets.SSH_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /opt/vpn-bot
-            git pull origin main
+            cd /root/VPN_GPT
+            git fetch --all
+            git reset --hard origin/main
             systemctl restart vpn-bot
             systemctl status vpn-bot --no-pager
-            echo "✅ VPN Bot redeployed successfully!"
+            echo "✅ VPN Bot successfully redeployed with latest code!"
