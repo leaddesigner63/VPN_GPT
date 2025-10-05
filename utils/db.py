@@ -3,11 +3,11 @@ from datetime import datetime, timedelta
 
 DB_PATH = "/root/VPN_GPT/dialogs.db"
 
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # История общения
     c.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +20,6 @@ def init_db():
         )
     """)
 
-    # Учёт VPN-ключей
     c.execute("""
         CREATE TABLE IF NOT EXISTS vpn_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,14 +39,13 @@ def init_db():
 
 
 def save_message(user_id, username, full_name, message, reply):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO history (user_id, username, full_name, message, reply, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, username, full_name, message, reply, datetime.utcnow().isoformat()))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO history (user_id, username, full_name, message, reply, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, username, full_name, message, reply, datetime.utcnow().isoformat()))
+        conn.commit()
 
 
 def get_last_messages(user_id, limit=5):
@@ -67,14 +65,13 @@ def get_last_messages(user_id, limit=5):
 def save_vpn_key(user_id, username, full_name, link, expires_at):
     import uuid
     key_uuid = str(uuid.uuid4())
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (user_id, username, full_name, key_uuid, link, datetime.utcnow().isoformat(), expires_at.isoformat()))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, username, full_name, key_uuid, link, datetime.utcnow().isoformat(), expires_at.isoformat()))
+        conn.commit()
 
 
 def get_expiring_keys(days_before=3):
@@ -87,11 +84,19 @@ def get_expiring_keys(days_before=3):
     """, (threshold,))
     rows = c.fetchall()
     conn.close()
+
+    parsed = []
+    for user_id, name, exp in rows:
+        try:
+            parsed.append((user_id, name, datetime.fromisoformat(exp)))
+        except:
+            continue
+    return parsed
+
+
 def renew_vpn_key(user_id, extend_days=30):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    # Найдём последний активный ключ
     c.execute("""
         SELECT id, expires_at FROM vpn_keys
         WHERE user_id = ? AND active = 1
@@ -107,42 +112,43 @@ def renew_vpn_key(user_id, extend_days=30):
     old_exp_date = datetime.fromisoformat(old_exp)
     new_exp_date = old_exp_date + timedelta(days=extend_days)
 
-    # Обновляем срок действия
     c.execute("UPDATE vpn_keys SET expires_at = ? WHERE id = ?", (new_exp_date.isoformat(), key_id))
     conn.commit()
     conn.close()
     return new_exp_date
 
-    # Преобразуем дату в datetime
-    parsed = []
-    for user_id, name, exp in rows:
-        try:
-            parsed.append((user_id, name, datetime.fromisoformat(exp)))
-        except:
-            continue
-    return parsed
 
 def get_expired_keys():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.utcnow().isoformat()
-    c.execute("SELECT user_id, full_name, link FROM vpn_keys WHERE active = 1 AND expires_at < ?", (now,))
+    c.execute("""
+        SELECT user_id, full_name, link
+        FROM vpn_keys
+        WHERE active = 1 AND expires_at < ?
+        ORDER BY expires_at ASC
+    """, (now,))
     rows = c.fetchall()
     conn.close()
     return rows
 
 
 def deactivate_vpn_key(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE vpn_keys SET active = 0 WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("UPDATE vpn_keys SET active = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+
 
 def get_all_active_users():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT user_id, full_name, expires_at FROM vpn_keys WHERE active = 1 ORDER BY expires_at DESC")
+    c.execute("""
+        SELECT user_id, full_name, expires_at
+        FROM vpn_keys
+        WHERE active = 1
+        ORDER BY expires_at DESC
+    """)
     rows = c.fetchall()
     conn.close()
     return rows
