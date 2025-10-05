@@ -5,3 +5,4 @@ __pycache__/
 *.json
 *.sqlite3
 *.db
+.env
