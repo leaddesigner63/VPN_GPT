@@ -1,53 +1,34 @@
-import asyncio
-import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from openai import AsyncOpenAI
-from dotenv import load_dotenv
-from utils.vpn import add_vpn_user
-from utils.qrgen import make_qr
-
-# --- Инициализация ---
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GPT_ASSISTANT_ID = os.getenv("GPT_ASSISTANT_ID")
-
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-# --- Команда /start ---
-@dp.message(Command("start"))
-async def start(msg: types.Message):
-    await msg.answer(
-        "👋 Привет! Я — VPN GPT, твой персональный помощник по VPN.\n"
-        "Расскажи, зачем тебе нужен VPN — я помогу подобрать оптимальный вариант."
-    )
-
-# --- Команда /buy ---
-@dp.message(Command("buy"))
-async def buy(msg: types.Message):
-    await msg.answer("⏳ Создаю подключение...")
-    link = add_vpn_user()
-    qr = make_qr(link)
-    await msg.answer("✅ Готово! Вот ссылка для подключения:")
-    await msg.answer(link)
-    await msg.answer_photo(qr, caption="📱 Отсканируй QR-код для быстрого подключения")
-
-# --- Общение с кастомным GPT через Assistants API ---
 @dp.message()
 async def chat_with_assistant(msg: types.Message):
     user_input = msg.text.strip()
 
+    # Получаем имя пользователя из Telegram
+    first_name = msg.from_user.first_name or "друг"
+    last_name = msg.from_user.last_name or ""
+    full_name = f"{first_name} {last_name}".strip()
+
     try:
+        # Создаём поток (thread) с персонализацией
         thread = await client.beta.threads.create_and_run(
             assistant_id=GPT_ASSISTANT_ID,
-            thread={"messages": [{"role": "user", "content": user_input}]}
+            thread={
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"Ты — AI-консультант VPN GPT. "
+                            f"Ты общаешься с пользователем по имени {full_name}. "
+                            f"Будь дружелюбен и персонализируй ответы. "
+                            f"Если знаешь имя, используй его естественно, но не в каждом сообщении. "
+                            f"Веди себя как живой эксперт, помогающий выбрать и настроить VPN."
+                        )
+                    },
+                    {"role": "user", "content": user_input},
+                ]
+            }
         )
 
-        # Получаем ответ из последнего сообщения
+        # Получаем ответ
         messages = await client.beta.threads.messages.list(thread_id=thread.id)
         if messages.data:
             reply = messages.data[0].content[0].text.value
@@ -58,11 +39,4 @@ async def chat_with_assistant(msg: types.Message):
     except Exception as e:
         print("Error communicating with GPT Assistant:", e)
         await msg.answer("⚠️ Произошла ошибка при обращении к GPT. Попробуй позже.")
-
-# --- Запуск ---
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
