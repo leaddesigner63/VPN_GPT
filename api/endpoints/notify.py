@@ -1,8 +1,8 @@
 import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from api.utils import db
-from api.utils.telegram import send_message, broadcast
+from utils import db
+from utils.telegram import send_message, broadcast
 
 router = APIRouter()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")

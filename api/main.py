@@ -8,11 +8,11 @@ load_dotenv()
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 # Routers
-from api.endpoints.vpn import router as vpn_router
-from api.endpoints.users import router as users_router
-from api.endpoints.morune import router as morune_router
-from api.endpoints.notify import router as notify_router
-from api.endpoints.admin import router as admin_router
+from endpoints.vpn import router as vpn_router
+from endpoints.users import router as users_router
+from endpoints.morune import router as morune_router
+from endpoints.notify import router as notify_router
+from endpoints.admin import router as admin_router
 
 app.include_router(vpn_router, prefix="/vpn", tags=["vpn"])
 app.include_router(users_router, prefix="/users", tags=["users"])

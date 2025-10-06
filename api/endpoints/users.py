@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter, Header, HTTPException
-from api.utils import db
+from utils import db
 
 router = APIRouter()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
