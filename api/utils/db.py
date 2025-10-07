@@ -2,8 +2,13 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 
-DB_PATH = os.getenv("DATABASE", "/root/VPN_GPT/dialogs.db")
+
+_BASE_DIR = Path(os.getenv("APP_ROOT", Path(__file__).resolve().parents[2]))
+_DEFAULT_DB = _BASE_DIR / "dialogs.db"
+DB_PATH = Path(os.getenv("DATABASE", _DEFAULT_DB))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Таблицы: history, vpn_keys (есть), добавим assistant_threads (tg_user_id, thread_id)
 INIT_SQL = """
