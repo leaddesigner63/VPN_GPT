@@ -13,6 +13,25 @@ from endpoints.users import router as users_router
 from endpoints.morune import router as morune_router
 from endpoints.notify import router as notify_router
 from endpoints.admin import router as admin_router
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="VPN_GPT Action API",
+        version="1.0.0",
+        description="API for GPT Actions — manage VPN keys, users, and payments",
+        routes=app.routes,
+    )
+    openapi_schema["servers"] = [
+        {"url": "http://45.92.174.166:8080"}
+    ]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 
 app.include_router(vpn_router, prefix="/vpn", tags=["vpn"])
 app.include_router(users_router, prefix="/users", tags=["users"])
@@ -30,3 +49,6 @@ def healthz():
 async def all_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
 
+
+from endpoints import vpn
+app.include_router(vpn.router)
