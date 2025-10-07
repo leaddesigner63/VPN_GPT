@@ -1,23 +1,30 @@
+from __future__ import annotations
+
 import os
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
 from datetime import datetime, timedelta
-from utils import db, xray
+
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+
+from ..utils import db, xray
 
 router = APIRouter()
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
+
 def require_admin(x_admin_token: str | None):
     if not x_admin_token or x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
 
 class PaymentIn(BaseModel):
     user_id: str
     username: str | None = None
     days: int = 30
 
-@router.post("/morune/paid")
+
+@router.post("/paid")
 def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(default=None)):
     require_admin(x_admin_token)
     email = f"user_{payload.user_id}@auto"
@@ -25,9 +32,9 @@ def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(defau
     uuid = new_client["uuid"]
     issued = datetime.utcnow()
     expires = issued + timedelta(days=payload.days)
-    VLESS_HOST = os.getenv("VLESS_HOST", "YOUR_HOST")
-    VLESS_PORT = os.getenv("VLESS_PORT", "2053")
-    link = f"vless://{uuid}@{VLESS_HOST}:{VLESS_PORT}?encryption=none#VPN_GPT"
+    vless_host = os.getenv("VLESS_HOST", "YOUR_HOST")
+    vless_port = os.getenv("VLESS_PORT", "2053")
+    link = f"vless://{uuid}@{vless_host}:{vless_port}?encryption=none#VPN_GPT"
 
     with db.connect() as con:
         con.execute(
@@ -46,7 +53,8 @@ def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(defau
         )
     return {"ok": True, "uuid": uuid, "link": link, "expires_at": expires.isoformat()}
 
-@router.get("/morune/check")
+
+@router.get("/check")
 def morune_check(x_admin_token: str | None = Header(default=None)):
     require_admin(x_admin_token)
     with db.connect() as con:
