@@ -11,12 +11,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..utils import xray
+from ..utils.env import get_vless_host
 from ..utils.db import connect
 
 
 router = APIRouter()
 
-HOST = os.getenv("VLESS_HOST", "vpn-gpt.store")
+HOST = get_vless_host()
 PORT = os.getenv("VLESS_PORT", "2053")
 
 

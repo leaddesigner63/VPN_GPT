@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from ..utils import db, xray
+from ..utils.env import get_vless_host
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(defau
     uuid = new_client["uuid"]
     issued = datetime.utcnow()
     expires = issued + timedelta(days=payload.days)
-    vless_host = os.getenv("VLESS_HOST", "YOUR_HOST")
+    vless_host = get_vless_host()
     vless_port = os.getenv("VLESS_PORT", "2053")
     link = f"vless://{uuid}@{vless_host}:{vless_port}?encryption=none#VPN_GPT"
 
