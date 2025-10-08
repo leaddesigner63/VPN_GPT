@@ -76,3 +76,209 @@ if __name__ == "__main__":
     import asyncio
     asyncio.run(dp.start_polling(bot))
 
+# --- CHAT ID CAPTURE (safe middleware) ---
+import sqlite3
+from aiogram import types
+try:
+    from aiogram.dispatcher.middlewares import BaseMiddleware
+except Exception:
+    # aiogram v3 fallback (если вдруг используется v3)
+    from aiogram.dispatcher.middlewares.base import BaseMiddleware  # type: ignore
+
+DB_PATH = "/root/VPN_GPT/dialogs.db"
+
+def _ensure_tables():
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS tg_users (
+            username   TEXT PRIMARY KEY,
+            chat_id    INTEGER NOT NULL,
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen  TEXT DEFAULT (datetime('now'))
+        );""")
+        conn.commit()
+
+def save_chat_id(username: str | None, chat_id: int | None) -> None:
+    if not username or not chat_id:
+        return
+    _ensure_tables()
+    username = username.lstrip("@").lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO tg_users (username, chat_id, first_seen, last_seen)
+            VALUES (?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(username) DO UPDATE SET
+                chat_id=excluded.chat_id,
+                last_seen=datetime('now')
+        """, (username, int(chat_id)))
+        conn.commit()
+
+class SaveChatIdMiddleware(BaseMiddleware):
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        try:
+            save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+        except Exception:
+            pass
+
+# dp должен быть объявлен выше в файле (Dispatcher)
+try:
+    dp.middleware.setup(SaveChatIdMiddleware())
+except Exception:
+    # Если порядок другой и dp ещё не создан — проигнорируем (но лучше поместить этот блок сразу после объявления dp)
+    pass
+
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+    await message.answer("Готово! Я запомнил твой chat_id ✅")
+# --- /CHAT ID CAPTURE ---
+# --- CHAT ID CAPTURE (safe middleware) ---
+import sqlite3
+from aiogram import types
+try:
+    from aiogram.dispatcher.middlewares import BaseMiddleware  # aiogram v2
+except Exception:
+    from aiogram.dispatcher.middlewares.base import BaseMiddleware  # aiogram v3 fallback
+
+DB_PATH = "/root/VPN_GPT/dialogs.db"
+
+def _ensure_tables():
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS tg_users (
+            username   TEXT PRIMARY KEY,
+            chat_id    INTEGER NOT NULL,
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen  TEXT DEFAULT (datetime('now'))
+        );""")
+        conn.commit()
+
+def save_chat_id(username: str | None, chat_id: int | None) -> None:
+    if not username or not chat_id:
+        return
+    _ensure_tables()
+    username = username.lstrip("@").lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO tg_users (username, chat_id, first_seen, last_seen)
+            VALUES (?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(username) DO UPDATE SET
+                chat_id=excluded.chat_id,
+                last_seen=datetime('now')
+        """, (username, int(chat_id)))
+        conn.commit()
+
+class SaveChatIdMiddleware(BaseMiddleware):
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        try:
+            save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+        except Exception:
+            pass
+
+# dp должен быть объявлен выше (Dispatcher)
+try:
+    dp.middleware.setup(SaveChatIdMiddleware())
+except Exception:
+    pass
+
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+    await message.answer("Готово! Я запомнил твой chat_id ✅")
+# --- /CHAT ID CAPTURE ---
+# --- CHAT ID CAPTURE (safe middleware) ---
+import sqlite3
+from aiogram import types
+try:
+    from aiogram.dispatcher.middlewares import BaseMiddleware  # aiogram v2
+except Exception:
+    from aiogram.dispatcher.middlewares.base import BaseMiddleware  # aiogram v3 fallback
+DB_PATH = "/root/VPN_GPT/dialogs.db"
+def _ensure_tables():
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS tg_users (
+            username   TEXT PRIMARY KEY,
+            chat_id    INTEGER NOT NULL,
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen  TEXT DEFAULT (datetime('now'))
+        );""")
+        conn.commit()
+def save_chat_id(username: str | None, chat_id: int | None) -> None:
+    if not username or not chat_id: return
+    _ensure_tables()
+    username = username.lstrip("@").lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO tg_users (username, chat_id, first_seen, last_seen)
+            VALUES (?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(username) DO UPDATE SET
+                chat_id=excluded.chat_id,
+                last_seen=datetime('now')
+        """, (username, int(chat_id)))
+        conn.commit()
+class SaveChatIdMiddleware(BaseMiddleware):
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        try:
+            save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+        except Exception:
+            pass
+try:
+    dp.middleware.setup(SaveChatIdMiddleware())
+except Exception:
+    pass
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+    await message.answer("Готово! Я запомнил твой chat_id ✅")
+# --- /CHAT ID CAPTURE ---
+# --- CHAT ID CAPTURE (safe middleware) ---
+import sqlite3
+from aiogram import types
+try:
+    from aiogram.dispatcher.middlewares import BaseMiddleware  # aiogram v2
+except Exception:
+    from aiogram.dispatcher.middlewares.base import BaseMiddleware  # aiogram v3 fallback
+DB_PATH = "/root/VPN_GPT/dialogs.db"
+def _ensure_tables():
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS tg_users (
+            username   TEXT PRIMARY KEY,
+            chat_id    INTEGER NOT NULL,
+            first_seen TEXT DEFAULT (datetime('now')),
+            last_seen  TEXT DEFAULT (datetime('now'))
+        );""")
+        conn.commit()
+def save_chat_id(username: str | None, chat_id: int | None) -> None:
+    if not username or not chat_id: return
+    _ensure_tables()
+    username = username.lstrip("@").lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO tg_users (username, chat_id, first_seen, last_seen)
+            VALUES (?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(username) DO UPDATE SET
+                chat_id=excluded.chat_id,
+                last_seen=datetime('now')
+        """, (username, int(chat_id)))
+        conn.commit()
+class SaveChatIdMiddleware(BaseMiddleware):
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        try:
+            save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+        except Exception:
+            pass
+try:
+    dp.middleware.setup(SaveChatIdMiddleware())
+except Exception:
+    pass
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    save_chat_id(getattr(message.from_user, "username", None), getattr(message.chat, "id", None))
+    await message.answer("Готово! Я запомнил твой chat_id ✅")
+# --- /CHAT ID CAPTURE ---

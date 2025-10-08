@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+
+
+
+from api.utils.vless import build_vless_link
+
 import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from ..utils import db, xray
+from api.utils import db, xray
 from ..utils.env import get_vless_host
 
 router = APIRouter()
@@ -35,7 +40,7 @@ def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(defau
     expires = issued + timedelta(days=payload.days)
     vless_host = get_vless_host()
     vless_port = os.getenv("VLESS_PORT", "2053")
-    link = f"vless://{uuid}@{vless_host}:{vless_port}?encryption=none#VPN_GPT"
+    link = f"build_vless_link(uuid, username)@{vless_host}:{vless_port}?encryption=none#VPN_GPT"
 
     with db.connect() as con:
         con.execute(

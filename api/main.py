@@ -1,5 +1,12 @@
-"""Main FastAPI application for VPN_GPT."""
 from __future__ import annotations
+
+
+
+
+
+from api.utils.vless import build_vless_link
+
+"""Main FastAPI application for VPN_GPT."""
 
 import os
 from typing import Any
@@ -15,8 +22,8 @@ app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 
 # Import routers after the FastAPI app is created to avoid circular imports.
-from .endpoints import admin, morune, notify, users, vpn  # noqa: E402  pylint: disable=wrong-import-position
-from .utils import db  # noqa: E402  pylint: disable=wrong-import-position
+from api.endpoints import admin, morune, notify, users, vpn  # noqa: E402  pylint: disable=wrong-import-position
+from api.utils import db  # noqa: E402  pylint: disable=wrong-import-position
 
 
 @app.on_event("startup")

@@ -6,3 +6,8 @@ __pycache__/
 *.sqlite3
 *.db
 .env
+.env
+nohup.out
+__pycache__/
+*.pyc
+*.db-*

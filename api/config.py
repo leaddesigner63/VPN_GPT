@@ -1,19 +1,19 @@
-"""Configuration helpers for the FastAPI service."""
 from __future__ import annotations
 
+
+
+
+import os
 from dotenv import load_dotenv
-
-from .utils.env import get_vless_host
-
-# Ensure variables from the project-level `.env` are available via ``os.getenv``
-# before computing derived configuration values.
-load_dotenv()
-
-# Export the resolved domain so that other modules can simply import it from
-# ``api.config`` without duplicating environment parsing logic. The
-# ``get_vless_host`` helper already knows how to pull the value from both
-# process environment variables and the `.env` file, applying normalisation and
-# sensible fallbacks when necessary.
-DOMAIN = get_vless_host()
-
-__all__ = ["DOMAIN"]
+ENV_PATH = "/root/VPN_GPT/.env"
+if not os.path.exists(ENV_PATH):
+    raise RuntimeError(f".env не найден по пути {ENV_PATH}")
+load_dotenv(ENV_PATH, override=True)
+def require_env(name: str) -> str:
+    v = os.getenv(name)
+    if not v:
+        raise RuntimeError(f"Переменная окружения {name} не задана в {ENV_PATH}")
+    return v
+VLESS_HOST = require_env("VLESS_HOST").strip()
+VLESS_PORT = int(require_env("VLESS_PORT"))
+print(f"[CONFIG] VLESS_HOST={VLESS_HOST}, VLESS_PORT={VLESS_PORT}")
