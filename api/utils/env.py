@@ -72,15 +72,19 @@ def _iter_env_files() -> Iterable[Path]:
 
 
 @lru_cache(maxsize=1)
-def _load_dotenv_values() -> dict[str, str]:
+def _host_from_env_files() -> str | None:
     for env_file in _iter_env_files():
         try:
             values = dotenv_values(env_file)
         except OSError:
             continue
-        if values:
-            return {k: v for k, v in values.items() if v is not None}
-    return {}
+        if not values:
+            continue
+        for key in _CANDIDATE_KEYS:
+            host = _normalise_host(values.get(key))
+            if host:
+                return host
+    return None
 
 
 def get_vless_host(default: str = "vpn-gpt.store") -> str:
@@ -91,11 +95,9 @@ def get_vless_host(default: str = "vpn-gpt.store") -> str:
         if host:
             return host
 
-    values = _load_dotenv_values()
-    for key in _CANDIDATE_KEYS:
-        host = _normalise_host(values.get(key))
-        if host:
-            return host
+    host = _host_from_env_files()
+    if host:
+        return host
 
     return default
 
