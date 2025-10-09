@@ -19,6 +19,7 @@ from api.utils import xray
 from ..utils.env import get_vless_host
 from ..utils.db import connect
 
+from api.utils.link import compose_vless_link
 
 router = APIRouter()
 
@@ -90,7 +91,7 @@ async def issue_vpn_key(request: Request):
     username = str(username).strip()
     uid = str(uuidlib.uuid4())
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-    link = f"vless://{uid}@{HOST}:{PORT}?encryption=none#{username}"
+    link = compose_vless_link(uid, username)
 
     _insert_vpn_key(username, uid, expires, link)
 

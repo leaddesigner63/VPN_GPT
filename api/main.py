@@ -77,3 +77,16 @@ app.openapi = custom_openapi
 
 
 __all__ = ["app"]
+
+from api.endpoints import users
+app.include_router(users.router)
+
+
+from api.endpoints import notify
+app.include_router(notify.router)
+
+
+from api.endpoints import expiring, broadcast
+app.include_router(expiring.router)
+app.include_router(broadcast.router)
+
