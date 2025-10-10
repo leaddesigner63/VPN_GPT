@@ -1,7 +1,12 @@
+import datetime
+import sqlite3
+
 from fastapi import APIRouter
-import sqlite3, datetime
+
+from api.utils.logging import get_logger
 
 router = APIRouter()
+logger = get_logger("endpoints.expiring")
 
 @router.get("/users/expiring")
 async def list_expiring_users():
@@ -21,4 +26,6 @@ async def list_expiring_users():
     cur.execute("SELECT username, uuid, expires FROM vpn_keys WHERE expires <= ? AND active=1", (limit,))
     rows = cur.fetchall()
     conn.close()
-    return {"ok": True, "expiring": [{"username": u, "uuid": x, "expires": e} for u, x, e in rows]}
+    result = [{"username": u, "uuid": x, "expires": e} for u, x, e in rows]
+    logger.info("Found %d expiring users", len(result))
+    return {"ok": True, "expiring": result}

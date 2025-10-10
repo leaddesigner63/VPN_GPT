@@ -3,8 +3,6 @@ from __future__ import annotations
 
 
 
-from api.utils.vless import build_vless_link
-
 import datetime
 import json
 import os
@@ -20,14 +18,18 @@ from ..utils.env import get_vless_host
 from ..utils.db import connect
 
 from api.utils.link import compose_vless_link
+from api.utils.logging import get_logger
 
 router = APIRouter()
 
 HOST = get_vless_host()
 PORT = os.getenv("VLESS_PORT", "2053")
 
+logger = get_logger("endpoints.vpn")
+
 
 def _error_response(code: str, status: int = 400) -> JSONResponse:
+    logger.warning("Returning error response", extra={"error": code, "status": status})
     return JSONResponse(status_code=status, content={"ok": False, "error": code})
 
 
@@ -47,6 +49,10 @@ def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> None:
             f"INSERT INTO vpn_keys ({fields}) VALUES ({placeholders})",
             tuple(payload.values()),
         )
+    logger.info(
+        "Inserted new VPN key",
+        extra={"username": username, "uuid": uid, "expires": expires},
+    )
 
 
 def _update_expiry(username: str, new_exp: str) -> bool:
@@ -55,13 +61,27 @@ def _update_expiry(username: str, new_exp: str) -> bool:
             "UPDATE vpn_keys SET expires_at=? WHERE username=? AND active=1",
             (new_exp, username),
         )
-        return cur.rowcount > 0
+        updated = cur.rowcount > 0
+    if updated:
+        logger.info(
+            "Updated VPN key expiry", extra={"username": username, "expires": new_exp}
+        )
+    else:
+        logger.warning(
+            "Attempted to renew non-existing VPN key", extra={"username": username}
+        )
+    return updated
 
 
 def _deactivate(uuid: str) -> bool:
     with connect() as conn:
         cur = conn.execute("UPDATE vpn_keys SET active=0 WHERE uuid=?", (uuid,))
-        return cur.rowcount > 0
+        deactivated = cur.rowcount > 0
+    if deactivated:
+        logger.info("Deactivated VPN key", extra={"uuid": uuid})
+    else:
+        logger.warning("Attempted to deactivate unknown VPN key", extra={"uuid": uuid})
+    return deactivated
 
 
 def _get_active_key(username: str) -> dict[str, Any] | None:
@@ -71,7 +91,11 @@ def _get_active_key(username: str) -> dict[str, Any] | None:
             (username,),
         )
         row = cur.fetchone()
-        return dict(row) if row else None
+        if row:
+            logger.debug("Located active VPN key for %s", username)
+            return dict(row)
+        logger.debug("No active VPN key found for %s", username)
+        return None
 
 
 @router.post("/issue_key")
@@ -89,6 +113,7 @@ async def issue_vpn_key(request: Request):
         return _error_response("invalid_days")
 
     username = str(username).strip()
+    logger.info("Issuing VPN key", extra={"username": username, "days": days})
     uid = str(uuidlib.uuid4())
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     link = compose_vless_link(uid, username)
@@ -97,9 +122,9 @@ async def issue_vpn_key(request: Request):
 
     try:
         xray.add_client(username, uid)
-    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError):
+    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
         # Позволяем API работать даже без установленного Xray
-        pass
+        logger.exception("Failed to add client to Xray", extra={"uuid": uid, "error": str(err)})
 
     return {"ok": True, "link": link, "uuid": uid, "expires": expires}
 
@@ -119,6 +144,7 @@ async def renew_vpn_key(request: Request):
         return _error_response("invalid_days")
 
     username = str(username).strip()
+    logger.info("Renewing VPN key", extra={"username": username, "days": days})
     row = _get_active_key(username)
     if not row:
         return _error_response("user_not_found", status=404)
@@ -141,13 +167,14 @@ async def disable_vpn_key(request: Request):
         return _error_response("missing_uuid")
 
     uid = str(uid).strip()
+    logger.info("Disabling VPN key", extra={"uuid": uid})
 
     if not _deactivate(uid):
         return _error_response("uuid_not_found", status=404)
 
     try:
         xray.remove_client(uid)
-    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError):
-        pass
+    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
+        logger.exception("Failed to remove client from Xray", extra={"uuid": uid, "error": str(err)})
 
     return {"ok": True, "uuid": uid}
