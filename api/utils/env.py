@@ -3,7 +3,6 @@ from __future__ import annotations
 
 
 
-from api.utils.vless import build_vless_link
 """Utilities for reading configuration from environment files."""
 
 import os
@@ -12,6 +11,10 @@ from pathlib import Path
 from typing import Iterable
 
 from dotenv import dotenv_values
+
+from api.utils.logging import get_logger
+
+logger = get_logger("env")
 
 
 def _candidate_keys() -> Iterable[str]:
@@ -65,6 +68,7 @@ def get_vless_host(default: str = "vpn-gpt.store") -> str:
 
     host = _normalise_host(os.getenv("VLESS_HOST"))
     if host:
+        logger.debug("Resolved VLESS host from environment: %s", host)
         return host
 
     env_path = Path(__file__).resolve().parents[2] / ".env"
@@ -73,8 +77,10 @@ def get_vless_host(default: str = "vpn-gpt.store") -> str:
         for key in _candidate_keys():
             host = _normalise_host(values.get(key))
             if host:
+                logger.info("Resolved VLESS host from %s entry in %s", key, env_path)
                 return host
 
+    logger.warning("Falling back to default VLESS host: %s", default)
     return default
 
 

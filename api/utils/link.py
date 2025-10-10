@@ -1,10 +1,17 @@
 
-import os, json, urllib.parse
+import json
+import os
+import urllib.parse
+
+from api.utils.logging import get_logger
 
 XRAY = "/usr/local/etc/xray/config.json"
 HOST = os.getenv("VLESS_HOST", "vpn-gpt.store")
 
+logger = get_logger("link")
+
 def _read_cfg():
+    logger.debug("Reading Xray configuration for link composition from %s", XRAY)
     with open(XRAY, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -59,4 +66,8 @@ def compose_vless_link(uid: str, username: str = "user"):
         params["flow"] = "xtls-rprx-vision"
 
     query = urllib.parse.urlencode(params, doseq=False, safe="/,")
-    return f"vless://{uid}@{HOST}:{port}?{query}#{urllib.parse.quote(username)}"
+    link = f"vless://{uid}@{HOST}:{port}?{query}#{urllib.parse.quote(username)}"
+    logger.info(
+        "Composed VLESS link for user", extra={"username": username, "uuid": uid, "port": port}
+    )
+    return link
