@@ -20,7 +20,7 @@ def _get_admin_token() -> str | None:
     return token
 
 
-def require_admin(x_admin_token: str | None = Header(default=None)) -> None:
+def require_admin(x_admin_token: str = Header(...)) -> None:
     """Validate that the request is authorised with the admin token."""
 
     token = _get_admin_token()

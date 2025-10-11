@@ -79,7 +79,7 @@ def get_stats(
     active: bool | None = None,
     limit: int | None = None,
     _: None = Depends(require_admin),
-) -> dict[str, Any] | JSONResponse:
+) -> dict[str, Any]:
     try:
         limit = _validate_limit(limit)
     except ValueError:
