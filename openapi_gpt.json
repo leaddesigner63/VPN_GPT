@@ -293,13 +293,33 @@
         "description": "Возвращает перечень всех активных VPN-ключей с информацией об их истечении.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/UsernameParam"
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Telegram username пользователя"
+            }
           },
           {
-            "$ref": "#/components/parameters/ActiveParam"
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Фильтр по активным (true) или неактивным (false) записям"
+            }
           },
           {
-            "$ref": "#/components/parameters/LimitParam"
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Ограничение количества возвращаемых записей"
+            }
           }
         ],
         "responses": {
@@ -361,13 +381,33 @@
         "description": "Возвращает полный список пользователей с ключами и статусами.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/UsernameParam"
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Telegram username пользователя"
+            }
           },
           {
-            "$ref": "#/components/parameters/ActiveParam"
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Фильтр по активным (true) или неактивным (false) записям"
+            }
           },
           {
-            "$ref": "#/components/parameters/LimitParam"
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Ограничение количества возвращаемых записей"
+            }
           }
         ],
         "responses": {
@@ -429,13 +469,33 @@
         "description": "Возвращает пользователей, чьи ключи истекают в течение ближайших трёх дней.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/UsernameParam"
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Telegram username пользователя"
+            }
           },
           {
-            "$ref": "#/components/parameters/ActiveParam"
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Фильтр по активным (true) или неактивным (false) записям"
+            }
           },
           {
-            "$ref": "#/components/parameters/LimitParam"
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Ограничение количества возвращаемых записей"
+            }
           }
         ],
         "responses": {
@@ -497,13 +557,33 @@
         "description": "Возвращает подробную информацию о конкретном пользователе, включая ключи и статусы.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/UsernameParam"
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Telegram username пользователя"
+            }
           },
           {
-            "$ref": "#/components/parameters/ActiveParam"
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Фильтр по активным (true) или неактивным (false) записям"
+            }
           },
           {
-            "$ref": "#/components/parameters/LimitParam"
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Ограничение количества возвращаемых записей"
+            }
           }
         ],
         "responses": {
@@ -779,13 +859,33 @@
         "description": "Возвращает сводную статистику по активным и истёкшим ключам.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/UsernameParam"
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Telegram username пользователя"
+            }
           },
           {
-            "$ref": "#/components/parameters/ActiveParam"
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Фильтр по активным (true) или неактивным (false) записям"
+            }
           },
           {
-            "$ref": "#/components/parameters/LimitParam"
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Ограничение количества возвращаемых записей"
+            }
           }
         ],
         "responses": {
