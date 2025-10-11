@@ -34,6 +34,46 @@ def init_db():
         )
     """)
 
+    # удаляем дубликаты, оставляя последний по id
+    c.execute(
+        """
+        DELETE FROM vpn_keys
+        WHERE username IS NOT NULL
+          AND username <> ''
+          AND id NOT IN (
+            SELECT MAX(id) FROM vpn_keys
+            WHERE username IS NOT NULL AND username <> ''
+            GROUP BY username
+          )
+        """
+    )
+    c.execute(
+        """
+        DELETE FROM vpn_keys
+        WHERE user_id IS NOT NULL
+          AND id NOT IN (
+            SELECT MAX(id) FROM vpn_keys
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id
+          )
+        """
+    )
+
+    c.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_username
+        ON vpn_keys(username)
+        WHERE username IS NOT NULL AND username <> ''
+        """
+    )
+    c.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_user_id
+        ON vpn_keys(user_id)
+        WHERE user_id IS NOT NULL
+        """
+    )
+
     conn.commit()
     conn.close()
 
@@ -67,6 +107,20 @@ def save_vpn_key(user_id, username, full_name, link, expires_at):
     key_uuid = str(uuid.uuid4())
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, active FROM vpn_keys
+            WHERE (user_id = ? AND user_id IS NOT NULL)
+               OR (username = ? AND username IS NOT NULL)
+            ORDER BY active DESC, id DESC
+            LIMIT 1
+            """,
+            (user_id, username),
+        )
+        existing = c.fetchone()
+        if existing and existing[1] == 1:
+            # активный ключ уже существует
+            return None
         c.execute("""
             INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)

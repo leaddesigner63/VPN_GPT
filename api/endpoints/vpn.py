@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import sqlite3
 import subprocess
 import uuid as uuidlib
 import fcntl
@@ -31,7 +32,7 @@ def _error_response(code: str, status: int = 400) -> JSONResponse:
     return JSONResponse(status_code=status, content={"ok": False, "error": code})
 
 
-def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> None:
+def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> bool:
     payload = {
         "username": username,
         "uuid": uid,
@@ -42,12 +43,21 @@ def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> None:
     }
     fields = ", ".join(payload.keys())
     placeholders = ", ".join(["?"] * len(payload))
-    with connect() as conn:
-        conn.execute(
-            f"INSERT INTO vpn_keys ({fields}) VALUES ({placeholders})",
-            tuple(payload.values()),
+    try:
+        with connect() as conn:
+            conn.execute(
+                f"INSERT INTO vpn_keys ({fields}) VALUES ({placeholders})",
+                tuple(payload.values()),
+            )
+    except sqlite3.IntegrityError:
+        logger.warning(
+            "Duplicate VPN key insertion prevented",
+            extra={"username": username, "uuid": uid},
         )
+        return False
+
     logger.info("Inserted new VPN key", extra={"username": username, "uuid": uid, "expires": expires})
+    return True
 
 
 def _update_expiry(username: str, new_exp: str) -> bool:
@@ -154,11 +164,16 @@ async def issue_vpn_key(request: Request):
 
     username = str(username).strip()
     logger.info("Issuing VPN key", extra={"username": username, "days": days})
+    if _get_active_key(username):
+        logger.warning("User already has an active VPN key", extra={"username": username})
+        return _error_response("user_already_has_key", status=409)
+
     uid = str(uuidlib.uuid4())
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     link = compose_vless_link(uid, username)
 
-    _insert_vpn_key(username, uid, expires, link)
+    if not _insert_vpn_key(username, uid, expires, link):
+        return _error_response("user_already_has_key", status=409)
 
     # Добавляем клиента безопасно
     _safe_add_client(username, uid)
