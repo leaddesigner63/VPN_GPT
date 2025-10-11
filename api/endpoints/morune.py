@@ -65,6 +65,12 @@ def process_payment(payload: PaymentIn, x_admin_token: str | None = Header(defau
     try:
         new_client = xray.add_client(email=email)
         uuid = new_client["uuid"]
+    except ValueError as exc:
+        logger.warning(
+            "Duplicate client id prevented for Morune user",
+            extra={"user_id": payload.user_id, "username": payload.username},
+        )
+        raise HTTPException(status_code=409, detail="client_already_exists") from exc
     except Exception as exc:  # noqa: BLE001 - we log and propagate
         logger.exception("Failed to add Morune client to Xray", extra={"user_id": payload.user_id})
         raise
