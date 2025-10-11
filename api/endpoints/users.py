@@ -37,7 +37,7 @@ def list_users(
     active: bool | None = None,
     limit: int | None = None,
     _: None = Depends(require_admin),
-) -> dict[str, Any] | JSONResponse:
+) -> dict[str, Any]:
     """Return VPN users from the shared SQLite database."""
 
     try:
@@ -64,7 +64,7 @@ def expiring(
     active: bool | None = None,
     limit: int | None = None,
     _: None = Depends(require_admin),
-) -> dict[str, Any] | JSONResponse:
+) -> dict[str, Any]:
     """Return users whose subscription expires within the given number of days."""
 
     if days < 0:
@@ -96,7 +96,7 @@ def expiring(
 def get_userinfo(
     username: str | None = None,
     _: None = Depends(require_admin),
-) -> dict[str, Any] | JSONResponse:
+) -> dict[str, Any]:
     """Return aggregated VPN user information."""
 
     if not username:
