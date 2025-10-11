@@ -147,3 +147,131 @@ def mark_disabled(uuid: str):
         else:
             logger.warning("Attempted to deactivate unknown VPN key %s", uuid)
 
+
+def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
+    if row is None:
+        return None
+    return {key: row[key] for key in row.keys()}
+
+
+def _safe_fetch_one(con: sqlite3.Connection, query: str, params: tuple) -> sqlite3.Row | None:
+    try:
+        cur = con.execute(query, params)
+    except sqlite3.OperationalError as exc:
+        logger.debug("Query failed (ignored)", extra={"query": query, "error": str(exc)})
+        return None
+    return cur.fetchone()
+
+
+def get_vpn_user_full(username: str) -> dict | None:
+    """Return merged VPN data enriched with Telegram and history records."""
+
+    with connect() as con:
+        cur = con.execute(
+            "SELECT * FROM vpn_keys WHERE username=? AND active=1",
+            (username,),
+        )
+        vpn_row = cur.fetchone()
+        if vpn_row is None:
+            logger.info("VPN user not found or inactive", extra={"username": username})
+            return None
+
+        vpn_data = _row_to_dict(vpn_row) or {}
+
+        if not vpn_data.get("chat_id"):
+            chat_row = _safe_fetch_one(
+                con,
+                "SELECT chat_id FROM tg_users WHERE username=?",
+                (username,),
+            )
+            if chat_row and chat_row["chat_id"] is not None:
+                vpn_data["chat_id"] = chat_row["chat_id"]
+
+        if not vpn_data.get("user_id"):
+            user_id_value = None
+
+            history_row = _safe_fetch_one(
+                con,
+                """
+                SELECT user_id
+                FROM history
+                WHERE username=? AND user_id IS NOT NULL AND user_id <> ''
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (username,),
+            )
+            if history_row and history_row["user_id"]:
+                user_id_value = history_row["user_id"]
+            elif vpn_data.get("username"):
+                user_id_value = vpn_data["username"]
+
+            if user_id_value:
+                vpn_data["user_id"] = user_id_value
+
+        return vpn_data
+
+
+def auto_update_missing_fields():
+    """Fill missing identifiers in ``vpn_keys`` table from related tables."""
+
+    with connect() as con:
+        # Auto-fill chat_id values
+        cur = con.execute(
+            """
+            SELECT vk.id, vk.username
+            FROM vpn_keys AS vk
+            WHERE vk.chat_id IS NULL OR vk.chat_id = ''
+            """
+        )
+        for row in cur.fetchall():
+            chat_row = _safe_fetch_one(
+                con,
+                "SELECT chat_id FROM tg_users WHERE username=?",
+                (row["username"],),
+            )
+            if chat_row and chat_row["chat_id"] is not None:
+                con.execute(
+                    "UPDATE vpn_keys SET chat_id=? WHERE id=?",
+                    (chat_row["chat_id"], row["id"]),
+                )
+                logger.info(
+                    "Auto-filled chat_id for user %s", row["username"]
+                )
+
+        # Auto-fill user_id values
+        cur = con.execute(
+            """
+            SELECT vk.id, vk.username
+            FROM vpn_keys AS vk
+            WHERE vk.user_id IS NULL OR vk.user_id = ''
+            """
+        )
+        for row in cur.fetchall():
+            user_id_value = None
+
+            history_row = _safe_fetch_one(
+                con,
+                """
+                SELECT user_id
+                FROM history
+                WHERE username=? AND user_id IS NOT NULL AND user_id <> ''
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (row["username"],),
+            )
+            if history_row and history_row["user_id"]:
+                user_id_value = history_row["user_id"]
+            elif row["username"]:
+                user_id_value = row["username"]
+
+            if user_id_value:
+                con.execute(
+                    "UPDATE vpn_keys SET user_id=? WHERE id=?",
+                    (user_id_value, row["id"]),
+                )
+                logger.info(
+                    "Auto-filled user_id for user %s", row["username"]
+                )
+

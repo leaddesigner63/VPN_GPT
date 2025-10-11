@@ -93,6 +93,74 @@
           }
         }
       }
+    },
+    "/users/userinfo": {
+      "get": {
+        "summary": "Получить агрегированные данные пользователя",
+        "description": "Возвращает объединённые сведения о VPN-пользователе c авто-подтягиванием chat_id и user_id",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string"},
+            "description": "Telegram username пользователя"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Агрегированная информация о пользователе или сообщение об отсутствии данных",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {"type": "boolean"},
+                    "user": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "username": {"type": "string"},
+                        "uuid": {"type": "string"},
+                        "link": {"type": "string"},
+                        "chat_id": {"type": "integer"},
+                        "expires_at": {"type": "string", "format": "date"},
+                        "active": {"type": "integer"},
+                        "user_id": {"type": "string"}
+                      }
+                    },
+                    "error": {"type": "string", "nullable": true}
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "ok": true,
+                      "user": {
+                        "username": "ai_leaddesigner",
+                        "uuid": "xxxx-xxxx",
+                        "link": "vless://...",
+                        "chat_id": 123456,
+                        "expires_at": "2025-11-11",
+                        "active": 1,
+                        "user_id": "ai_leaddesigner"
+                      }
+                    }
+                  },
+                  "not_found": {
+                    "value": {
+                      "ok": false,
+                      "error": "user_not_found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
