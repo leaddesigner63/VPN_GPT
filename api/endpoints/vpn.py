@@ -164,9 +164,20 @@ async def issue_vpn_key(request: Request):
 
     username = str(username).strip()
     logger.info("Issuing VPN key", extra={"username": username, "days": days})
-    if _get_active_key(username):
-        logger.warning("User already has an active VPN key", extra={"username": username})
-        return _error_response("user_already_has_key", status=409)
+    active_key = _get_active_key(username)
+    if active_key:
+        logger.warning(
+            "User already has active key — skipping new issue.",
+            extra={"username": username, "uuid": active_key.get("uuid")},
+        )
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "error": "active_key_exists",
+                "message": "У пользователя уже есть действующий ключ.",
+            },
+        )
 
     uid = str(uuidlib.uuid4())
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
