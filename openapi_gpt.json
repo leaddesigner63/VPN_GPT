@@ -30,7 +30,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {},
+                "schema": {
+                  "$ref": "#/components/schemas/IssueVpnKeyResponse"
+                },
                 "example": {
                   "ok": true,
                   "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123",
@@ -58,6 +60,9 @@
               "example": {
                 "username": "demo_user",
                 "days": 30
+              },
+              "schema": {
+                "$ref": "#/components/schemas/IssueVpnKeyRequest"
               }
             }
           }
@@ -87,7 +92,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RenewVpnKeyResponse"
+                }
               }
             }
           },
@@ -98,6 +105,16 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewVpnKeyRequest"
               }
             }
           }
@@ -127,7 +144,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {},
+                "schema": {
+                  "$ref": "#/components/schemas/DisableVpnKeyResponse"
+                },
                 "example": {
                   "ok": true,
                   "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123"
@@ -151,6 +170,9 @@
             "application/json": {
               "example": {
                 "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/DisableVpnKeyRequest"
               }
             }
           }
@@ -231,8 +253,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response List Active Keys Vpn Active Get"
+                  "$ref": "#/components/schemas/VpnKeyCollectionResponse"
                 }
               }
             }
@@ -323,8 +344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response List Users Users  Get"
+                  "$ref": "#/components/schemas/VpnUserCollectionResponse"
                 }
               }
             }
@@ -425,8 +445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Expiring Users Expiring Get"
+                  "$ref": "#/components/schemas/VpnUserCollectionResponse"
                 }
               }
             }
@@ -485,8 +504,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Get Userinfo Users Userinfo Get"
+                  "$ref": "#/components/schemas/VpnUserinfoResponse"
                 }
               }
             }
@@ -518,8 +536,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response List All Users Users All Get"
+                  "$ref": "#/components/schemas/TelegramUsersResponse"
                 }
               }
             }
@@ -551,7 +568,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleMessageResponse"
+                }
               }
             }
           },
@@ -562,6 +581,16 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifySendRequest"
               }
             }
           }
@@ -592,7 +621,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleMessageResponse"
+                }
               }
             }
           },
@@ -603,6 +634,16 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyBroadcastRequest"
               }
             }
           }
@@ -633,8 +674,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Backup Db Admin Backup Db Post"
+                  "$ref": "#/components/schemas/BackupDatabaseResponse"
                 }
               }
             }
@@ -724,8 +764,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Get Stats Admin Stats Get"
+                  "$ref": "#/components/schemas/AdminStatsResponse"
                 }
               }
             }
@@ -768,8 +807,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response System Status Status Get"
+                  "$ref": "#/components/schemas/SystemStatusResponse"
                 }
               }
             }
@@ -798,8 +836,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Healthz Healthz Get"
+                  "$ref": "#/components/schemas/HealthcheckResponse"
                 }
               }
             }
@@ -858,6 +895,490 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "error"
+        ],
+        "additionalProperties": false,
+        "description": "Стандартный ответ об ошибке."
+      },
+      "IssueVpnKeyRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "additionalProperties": false,
+        "description": "Параметры для выдачи нового VPN-ключа."
+      },
+      "IssueVpnKeyResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "link": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires": {
+            "type": "string",
+            "format": "date"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "link",
+          "uuid",
+          "expires"
+        ],
+        "additionalProperties": false,
+        "description": "Успешный ответ при создании VPN-ключа."
+      },
+      "RenewVpnKeyRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "additionalProperties": false,
+        "description": "Параметры продления действия VPN-ключа."
+      },
+      "RenewVpnKeyResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "username": {
+            "type": "string"
+          },
+          "expires": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [
+          "ok",
+          "username",
+          "expires"
+        ],
+        "additionalProperties": false,
+        "description": "Успешный ответ продления VPN-ключа."
+      },
+      "DisableVpnKeyRequest": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "additionalProperties": false,
+        "description": "Параметры отключения VPN-ключа."
+      },
+      "DisableVpnKeyResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "ok",
+          "uuid"
+        ],
+        "additionalProperties": false,
+        "description": "Подтверждение успешного отключения VPN-ключа."
+      },
+      "VpnKey": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "link": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issued_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chat_id": {
+            "type": [
+              "integer",
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "uuid",
+          "username",
+          "active"
+        ],
+        "additionalProperties": true,
+        "description": "Информация о VPN-ключе из базы данных."
+      },
+      "VpnKeyCollectionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VpnKey"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "keys",
+          "total"
+        ],
+        "additionalProperties": false,
+        "description": "Список VPN-ключей, удовлетворяющих фильтрам."
+      },
+      "VpnUserCollectionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VpnKey"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "users",
+          "total"
+        ],
+        "additionalProperties": false,
+        "description": "Коллекция пользователей VPN из таблицы vpn_keys."
+      },
+      "VpnUserinfoResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "user": {
+            "$ref": "#/components/schemas/VpnKey"
+          }
+        },
+        "required": [
+          "ok",
+          "user"
+        ],
+        "additionalProperties": false,
+        "description": "Расширенная информация по одному пользователю VPN."
+      },
+      "TelegramUsersResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "chat_id": {
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "username",
+                "chat_id"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "users"
+        ],
+        "additionalProperties": false,
+        "description": "Список Telegram-пользователей из локальной таблицы."
+      },
+      "NotifySendRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "username",
+          "text"
+        ],
+        "additionalProperties": false,
+        "description": "Параметры персонального уведомления Telegram."
+      },
+      "NotifyBroadcastRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "description": "Текст массовой рассылки Telegram."
+      },
+      "SimpleMessageResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "additionalProperties": false,
+        "description": "Успешное подтверждение с текстом сообщения."
+      },
+      "BackupDatabaseResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "backup_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": "string",
+            "format": "uri"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "backup_id",
+          "created_at",
+          "location"
+        ],
+        "additionalProperties": false,
+        "description": "Информация о сохранённой резервной копии."
+      },
+      "AdminStatsResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "active_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expired_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "users_total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "active_keys",
+          "expired_keys",
+          "users_total"
+        ],
+        "additionalProperties": false,
+        "description": "Агрегированная статистика по пользователям VPN."
+      },
+      "SystemStatusResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "xray_status": {
+            "type": "string"
+          },
+          "bot_status": {
+            "type": "string"
+          },
+          "vpn_keys": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiring": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "xray_status",
+          "bot_status",
+          "vpn_keys",
+          "expiring"
+        ],
+        "additionalProperties": false,
+        "description": "Сводка состояния сервисов и пользователей."
+      },
+      "HealthcheckResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "service": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "service",
+          "timestamp"
+        ],
+        "additionalProperties": false,
+        "description": "Простой ответ проверки работоспособности."
       }
     }
   },
