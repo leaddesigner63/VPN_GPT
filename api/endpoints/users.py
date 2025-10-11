@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException
 from api.utils import db
 from api.utils.logging import get_logger
 
-router = APIRouter()
+router = APIRouter(prefix="/users", tags=["users"])
 logger = get_logger("endpoints.users")
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
@@ -18,7 +18,6 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 def require_admin(x_admin_token: str | None) -> None:
     """Ensure the caller provided a valid admin token."""
-
     if not ADMIN_TOKEN:
         logger.error("ADMIN_TOKEN is not configured; denying access")
         raise HTTPException(status_code=500, detail="Admin token is not configured")
@@ -30,10 +29,9 @@ def require_admin(x_admin_token: str | None) -> None:
     logger.debug("Admin authentication successful")
 
 
-@router.get("")
+@router.get("/")
 def list_users(active_only: bool = True, x_admin_token: str | None = Header(default=None)) -> dict[str, Any]:
     """Return VPN users from the shared SQLite database."""
-
     require_admin(x_admin_token)
     users = db.get_users(active_only=active_only)
     logger.info("Returning %d users", len(users))
@@ -43,7 +41,6 @@ def list_users(active_only: bool = True, x_admin_token: str | None = Header(defa
 @router.get("/expiring")
 def expiring(days: int = 1, x_admin_token: str | None = Header(default=None)) -> dict[str, Any]:
     """Return users whose subscription expires within the given number of days."""
-
     require_admin(x_admin_token)
     users = db.get_expiring_users(days=days)
     logger.info("Returning %d expiring users", len(users))
@@ -53,7 +50,6 @@ def expiring(days: int = 1, x_admin_token: str | None = Header(default=None)) ->
 @router.get("/all")
 async def list_all_users() -> dict[str, Any]:
     """Return all Telegram users stored in the local table."""
-
     logger.debug("Fetching Telegram users from tg_users table")
     conn = sqlite3.connect("/root/VPN_GPT/dialogs.db")
     try:

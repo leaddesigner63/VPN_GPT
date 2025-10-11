@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-
-
-
 import datetime
 import json
 import os
 import subprocess
 import uuid as uuidlib
+import fcntl
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -16,7 +14,6 @@ from fastapi.responses import JSONResponse
 from api.utils import xray
 from ..utils.env import get_vless_host
 from ..utils.db import connect
-
 from api.utils.link import compose_vless_link
 from api.utils.logging import get_logger
 
@@ -28,6 +25,7 @@ PORT = os.getenv("VLESS_PORT", "2053")
 logger = get_logger("endpoints.vpn")
 
 
+# === Helpers ===
 def _error_response(code: str, status: int = 400) -> JSONResponse:
     logger.warning("Returning error response", extra={"error": code, "status": status})
     return JSONResponse(status_code=status, content={"ok": False, "error": code})
@@ -49,10 +47,7 @@ def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> None:
             f"INSERT INTO vpn_keys ({fields}) VALUES ({placeholders})",
             tuple(payload.values()),
         )
-    logger.info(
-        "Inserted new VPN key",
-        extra={"username": username, "uuid": uid, "expires": expires},
-    )
+    logger.info("Inserted new VPN key", extra={"username": username, "uuid": uid, "expires": expires})
 
 
 def _update_expiry(username: str, new_exp: str) -> bool:
@@ -63,13 +58,9 @@ def _update_expiry(username: str, new_exp: str) -> bool:
         )
         updated = cur.rowcount > 0
     if updated:
-        logger.info(
-            "Updated VPN key expiry", extra={"username": username, "expires": new_exp}
-        )
+        logger.info("Updated VPN key expiry", extra={"username": username, "expires": new_exp})
     else:
-        logger.warning(
-            "Attempted to renew non-existing VPN key", extra={"username": username}
-        )
+        logger.warning("Attempted to renew non-existing VPN key", extra={"username": username})
     return updated
 
 
@@ -98,6 +89,55 @@ def _get_active_key(username: str) -> dict[str, Any] | None:
         return None
 
 
+# === Core logic ===
+def _safe_add_client(username: str, uid: str) -> None:
+    """Add a VLESS client to Xray with full duplicate cleanup and file lock."""
+    config_path = "/usr/local/etc/xray/config.json"
+    try:
+        with open(config_path, "r+", encoding="utf-8") as f:
+            # блокировка файла от одновременной записи
+            fcntl.flock(f, fcntl.LOCK_EX)
+            config = json.load(f)
+            clients = config["inbounds"][0]["settings"]["clients"]
+
+            # очистка дубликатов по email
+            seen = set()
+            unique_clients = []
+            for c in clients:
+                email = c.get("email")
+                if email not in seen:
+                    seen.add(email)
+                    unique_clients.append(c)
+                else:
+                    logger.warning("Removed duplicate email from config: %s", email)
+
+            config["inbounds"][0]["settings"]["clients"] = unique_clients
+
+            # если пользователь уже есть — не добавляем повторно
+            if any(c.get("email") == username for c in unique_clients):
+                logger.info("Client %s already exists — skipping duplicate.", username)
+            else:
+                unique_clients.append({"id": uid, "level": 0, "email": username})
+                logger.info("Added new Xray client %s", username)
+
+            # записываем обновлённый конфиг
+            f.seek(0)
+            json.dump(config, f, indent=2)
+            f.truncate()
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+        # перезапуск Xray только после успешного обновления
+        result = subprocess.run(["systemctl", "restart", "xray"], check=False)
+        if result.returncode == 0:
+            logger.info("Xray restarted successfully.")
+        else:
+            logger.warning("Xray restart returned code %s", result.returncode)
+
+    except Exception as err:
+        logger.exception("Failed to safely update Xray config", extra={"error": str(err)})
+
+
+# === API endpoints ===
 @router.post("/issue_key")
 async def issue_vpn_key(request: Request):
     data = await request.json()
@@ -120,11 +160,8 @@ async def issue_vpn_key(request: Request):
 
     _insert_vpn_key(username, uid, expires, link)
 
-    try:
-        xray.add_client(username, uid)
-    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
-        # Позволяем API работать даже без установленного Xray
-        logger.exception("Failed to add client to Xray", extra={"uuid": uid, "error": str(err)})
+    # Добавляем клиента безопасно
+    _safe_add_client(username, uid)
 
     return {"ok": True, "link": link, "uuid": uid, "expires": expires}
 
@@ -150,7 +187,8 @@ async def renew_vpn_key(request: Request):
         return _error_response("user_not_found", status=404)
 
     new_exp = (
-        datetime.datetime.strptime(row["expires_at"], "%Y-%m-%d") + datetime.timedelta(days=days)
+        datetime.datetime.strptime(row["expires_at"], "%Y-%m-%d")
+        + datetime.timedelta(days=days)
     ).strftime("%Y-%m-%d")
 
     if not _update_expiry(username, new_exp):
