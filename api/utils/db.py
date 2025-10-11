@@ -40,6 +40,42 @@ CREATE TABLE IF NOT EXISTS vpn_keys (
 );
 """
 
+INDEX_SQL = (
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_username
+      ON vpn_keys(username)
+      WHERE username IS NOT NULL AND username <> ''
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_user_id
+      ON vpn_keys(user_id)
+      WHERE user_id IS NOT NULL AND user_id <> ''
+    """,
+)
+
+DEDUP_SQL = (
+    """
+    DELETE FROM vpn_keys
+    WHERE username IS NOT NULL
+      AND username <> ''
+      AND id NOT IN (
+        SELECT MAX(id) FROM vpn_keys
+        WHERE username IS NOT NULL AND username <> ''
+        GROUP BY username
+      );
+    """,
+    """
+    DELETE FROM vpn_keys
+    WHERE user_id IS NOT NULL
+      AND user_id <> ''
+      AND id NOT IN (
+        SELECT MAX(id) FROM vpn_keys
+        WHERE user_id IS NOT NULL AND user_id <> ''
+        GROUP BY user_id
+      );
+    """,
+)
+
 @contextmanager
 def connect():
     logger.debug("Opening SQLite connection to %s", DB_PATH)
@@ -56,6 +92,10 @@ def init_db():
     logger.info("Ensuring SQLite schema exists at %s", DB_PATH)
     with connect() as con:
         con.executescript(INIT_SQL)
+        for statement in DEDUP_SQL:
+            con.execute(statement)
+        for statement in INDEX_SQL:
+            con.execute(statement)
     logger.info("SQLite schema check complete")
 
 def upsert_thread(tg_user_id: str, thread_id: str):
