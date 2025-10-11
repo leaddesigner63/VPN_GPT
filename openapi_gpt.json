@@ -14,17 +14,6 @@
         "summary": "Выдать VPN-ключ",
         "description": "Выдаёт VPN-ключ бесплатно (временный демо-режим)",
         "operationId": "vpnPostIssueKey",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -66,7 +55,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/vpn/renew_key": {
@@ -76,17 +70,6 @@
         ],
         "summary": "Renew Vpn Key",
         "operationId": "vpnPostRenewKey",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -118,7 +101,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/vpn/disable_key": {
@@ -128,17 +116,6 @@
         ],
         "summary": "Disable Vpn Key",
         "operationId": "vpnPostDisableKey",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -176,7 +153,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/vpn/active": {
@@ -236,15 +218,6 @@
               ],
               "title": "Limit"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -268,7 +241,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/users/": {
@@ -327,15 +305,6 @@
               ],
               "title": "Limit"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -359,7 +328,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/users/expiring": {
@@ -428,15 +402,6 @@
               ],
               "title": "Limit"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -460,7 +425,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/users/userinfo": {
@@ -487,15 +457,6 @@
               ],
               "title": "Username"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -519,7 +480,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/users/all": {
@@ -552,17 +518,6 @@
         "summary": "Send Message",
         "description": "Отправить личное уведомление конкретному пользователю.",
         "operationId": "notifyPostSend",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -594,7 +549,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/notify/broadcast": {
@@ -605,17 +565,6 @@
         "summary": "Notify Broadcast",
         "description": "Массовая рассылка сообщений всем пользователям из tg_users.",
         "operationId": "notifyPostBroadcast",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -647,7 +596,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/admin/backup_db": {
@@ -657,17 +611,6 @@
         ],
         "summary": "Backup Db",
         "operationId": "adminPostBackupDb",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -689,7 +632,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/admin/stats": {
@@ -747,15 +695,6 @@
               ],
               "title": "Limit"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -779,7 +718,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/status": {
@@ -790,17 +734,6 @@
         "summary": "System Status",
         "description": "Return a high-level summary of system state.",
         "operationId": "healthGetStatus",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -822,7 +755,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminTokenAuth": []
+          }
+        ]
       }
     },
     "/healthz": {
@@ -1379,6 +1317,14 @@
         ],
         "additionalProperties": false,
         "description": "Простой ответ проверки работоспособности."
+      }
+    },
+    "securitySchemes": {
+      "AdminTokenAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-admin-token",
+        "description": "Административный токен, который необходимо передавать в заголовке x-admin-token"
       }
     }
   },
