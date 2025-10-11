@@ -47,6 +47,20 @@ def expiring(days: int = 1, x_admin_token: str | None = Header(default=None)) ->
     return {"ok": True, "users": users}
 
 
+@router.get("/userinfo")
+def get_userinfo(username: str) -> dict[str, Any]:
+    """Return aggregated VPN user information."""
+
+    logger.debug("Fetching aggregated user info", extra={"username": username})
+    user = db.get_vpn_user_full(username)
+    if user is None:
+        logger.info("User not found", extra={"username": username})
+        return {"ok": False, "error": "user_not_found"}
+
+    logger.info("Returning aggregated user info", extra={"username": username})
+    return {"ok": True, "user": user}
+
+
 @router.get("/all")
 async def list_all_users() -> dict[str, Any]:
     """Return all Telegram users stored in the local table."""

@@ -27,6 +27,7 @@ def ensure_database() -> None:
     """Initialise the SQLite database schema if it does not exist."""
     logger.info("Initialising database schema if required")
     db.init_db()
+    db.auto_update_missing_fields()
     logger.info("Database initialisation complete")
 
 
