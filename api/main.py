@@ -18,7 +18,7 @@ logger = get_logger("api")
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 # === Routers ===
-from api.endpoints import admin, morune, notify, users, vpn  # noqa: E402
+from api.endpoints import admin, notify, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
 
 
@@ -33,7 +33,6 @@ def ensure_database() -> None:
 # === Router registration ===
 app.include_router(vpn.router, prefix="/vpn", tags=["vpn"])
 app.include_router(users.router)
-app.include_router(morune.router, prefix="/morune", tags=["morune"])
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
@@ -64,7 +63,7 @@ def custom_openapi() -> dict[str, Any]:
     openapi_schema = get_openapi(
         title="VPN_GPT Action API",
         version="1.0.0",
-        description="API for GPT Actions — manage VPN keys, users, and payments",
+        description="API for GPT Actions — manage VPN keys, users, and notifications",
         routes=app.routes,
     )
 

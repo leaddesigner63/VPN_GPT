@@ -1,0 +1,98 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "VPN_GPT Action API",
+    "version": "1.0.0",
+    "description": "API для GPT-действий: управление VPN-ключами, пользователями и уведомлениями"
+  },
+  "servers": [
+    {"url": "https://vpn-gpt.store"}
+  ],
+  "paths": {
+    "/vpn/issue_key": {
+      "post": {
+        "summary": "Выдать VPN-ключ",
+        "description": "Выдаёт VPN-ключ бесплатно (временный демо-режим)",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string"},
+            "description": "Административный токен (опционально)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Telegram username или иной идентификатор пользователя"
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 30,
+                    "description": "Срок действия ключа в днях"
+                  }
+                },
+                "required": ["username"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ключ создан успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {"type": "boolean"},
+                    "uuid": {"type": "string"},
+                    "link": {"type": "string", "format": "uri"},
+                    "expires": {"type": "string", "format": "date"},
+                    "message": {"type": "string"}
+                  },
+                  "required": ["ok", "uuid", "link", "expires", "message"]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "ok": true,
+                      "uuid": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
+                      "link": "vless://example@vpn-gpt.store",
+                      "expires": "2024-12-31",
+                      "message": "Ключ создан успешно."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "У пользователя уже есть активный ключ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {"type": "boolean"},
+                    "error": {"type": "string"},
+                    "message": {"type": "string"}
+                  },
+                  "required": ["ok", "error", "message"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

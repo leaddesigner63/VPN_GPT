@@ -61,6 +61,7 @@ def test_issue_vpn_key_creates_new(test_client):
     assert body["ok"] is True
     assert "uuid" in body
     assert "link" in body
+    assert body["message"] == "Ключ создан успешно."
     assert mock_safe_add.call_count == 1
     warning_spy.assert_not_called()
 
