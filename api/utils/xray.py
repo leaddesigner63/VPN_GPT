@@ -40,7 +40,27 @@ def add_client(email: str, client_id: str | None = None) -> dict:
     cfg = _load()
     inb = cfg.get("inbounds", [])[0]
     clients = inb.setdefault("settings", {}).setdefault("clients", [])
+
+    # Deduplicate any existing entries that accidentally share the same client id.
+    deduped: list[dict] = []
+    seen_ids: set[str] = set()
+    for client in clients:
+        cid = client.get("id")
+        if cid and cid in seen_ids:
+            logger.warning("Removed duplicate client id from Xray config", extra={"client_id": cid})
+            continue
+        if cid:
+            seen_ids.add(cid)
+        deduped.append(client)
+
+    if len(deduped) != len(clients):
+        inb["settings"]["clients"] = clients = deduped
+
     new_uuid = client_id or str(uuid4())
+    if new_uuid in seen_ids:
+        logger.error("Attempted to add duplicate client id", extra={"client_id": new_uuid, "email": email})
+        raise ValueError(f"Client id {new_uuid} already exists")
+
     clients.append({"id": new_uuid, "level": 0, "email": email})
     _save(cfg)
     _restart()
