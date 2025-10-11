@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-
-
-
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -118,26 +115,123 @@ def get_thread(tg_user_id: str) -> str | None:
         logger.debug("No thread mapping for user %s", tg_user_id)
         return None
 
-def get_users(active_only: bool = True):
-    with connect() as con:
-        if active_only:
-            cur = con.execute("SELECT * FROM vpn_keys WHERE active=1")
-        else:
-            cur = con.execute("SELECT * FROM vpn_keys")
-        rows = [dict(r) for r in cur.fetchall()]
-        logger.info("Fetched %d users (active_only=%s)", len(rows), active_only)
-        return rows
+def _apply_common_filters(
+    username: str | None,
+    active: bool | None,
+) -> tuple[list[str], list[object]]:
+    clauses: list[str] = []
+    params: list[object] = []
 
-def get_expiring_users(days: int = 3):
-    target = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
+    if username:
+        clauses.append("username = ?")
+        params.append(username)
+
+    if active is not None:
+        clauses.append("active = ?")
+        params.append(1 if active else 0)
+
+    return clauses, params
+
+
+def query_vpn_keys(
+    *, username: str | None = None, active: bool | None = None, limit: int | None = None
+) -> list[dict]:
+    query = ["SELECT * FROM vpn_keys"]
+    clauses, params = _apply_common_filters(username, active)
+
+    if clauses:
+        query.append("WHERE " + " AND ".join(clauses))
+
+    query.append("ORDER BY datetime(expires_at) ASC, id ASC")
+
+    if limit is not None:
+        query.append("LIMIT ?")
+        params.append(limit)
+
+    sql = " ".join(query)
     with connect() as con:
-        cur = con.execute("""
-        SELECT * FROM vpn_keys
-        WHERE active=1 AND date(expires_at) = date(?)
-        """, (target,))
+        cur = con.execute(sql, tuple(params))
         rows = [dict(r) for r in cur.fetchall()]
-        logger.info("Fetched %d users expiring within %d days", len(rows), days)
-        return rows
+    logger.info(
+        "Fetched %d vpn_keys rows", len(rows), extra={"username": username, "active": active, "limit": limit}
+    )
+    return rows
+
+
+def get_users(
+    *, username: str | None = None, active: bool | None = None, limit: int | None = None
+) -> list[dict]:
+    return query_vpn_keys(username=username, active=active, limit=limit)
+
+
+def get_expiring_users(
+    days: int = 3,
+    *,
+    username: str | None = None,
+    active: bool | None = True,
+    limit: int | None = None,
+) -> list[dict]:
+    start = datetime.utcnow().date().isoformat()
+    target = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
+
+    clauses, params = _apply_common_filters(username, active)
+    clauses.append("expires_at IS NOT NULL AND expires_at <> ''")
+    clauses.append("date(expires_at) BETWEEN date(?) AND date(?)")
+    params.extend([start, target])
+
+    query = ["SELECT * FROM vpn_keys", "WHERE " + " AND ".join(clauses), "ORDER BY datetime(expires_at) ASC, id ASC"]
+    if limit is not None:
+        query.append("LIMIT ?")
+        params.append(limit)
+
+    sql = " ".join(query)
+    with connect() as con:
+        cur = con.execute(sql, tuple(params))
+        rows = [dict(r) for r in cur.fetchall()]
+
+    logger.info(
+        "Fetched %d users expiring within %d days",
+        len(rows),
+        days,
+        extra={"username": username, "active": active, "limit": limit},
+    )
+    return rows
+
+
+def count_vpn_keys(active: bool | None = None) -> int:
+    query = "SELECT COUNT(*) FROM vpn_keys"
+    params: list[object] = []
+    if active is not None:
+        query += " WHERE active = ?"
+        params.append(1 if active else 0)
+
+    with connect() as con:
+        cur = con.execute(query, tuple(params))
+        (count,) = cur.fetchone()
+    logger.debug("Counted %d vpn_keys rows", count, extra={"active": active})
+    return int(count)
+
+
+def count_expiring_users(days: int = 3, active: bool | None = True) -> int:
+    start = datetime.utcnow().date().isoformat()
+    target = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
+
+    clauses = ["expires_at IS NOT NULL AND expires_at <> ''", "date(expires_at) BETWEEN date(?) AND date(?)"]
+    params: list[object] = [start, target]
+
+    if active is not None:
+        clauses.append("active = ?")
+        params.append(1 if active else 0)
+
+    query = "SELECT COUNT(*) FROM vpn_keys WHERE " + " AND ".join(clauses)
+
+    with connect() as con:
+        cur = con.execute(query, tuple(params))
+        (count,) = cur.fetchone()
+    logger.debug(
+        "Counted %d expiring users", count, extra={"days": days, "active": active}
+    )
+    return int(count)
 
 def mark_disabled(uuid: str):
     with connect() as con:

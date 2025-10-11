@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -18,7 +19,7 @@ logger = get_logger("api")
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 # === Routers ===
-from api.endpoints import admin, notify, users, vpn  # noqa: E402
+from api.endpoints import admin, notify, status, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
 
 
@@ -34,16 +35,22 @@ def ensure_database() -> None:
 # === Router registration ===
 app.include_router(vpn.router, prefix="/vpn", tags=["vpn"])
 app.include_router(users.router)
-app.include_router(notify.router, prefix="/notify", tags=["notify"])
+app.include_router(notify.router)
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(status.router, tags=["health"])
 
 
 # === Health check ===
 @app.get("/healthz")
-def healthz() -> dict[str, bool]:
+def healthz() -> dict[str, Any]:
     """Simple health-check endpoint used for monitoring."""
     logger.debug("Health check endpoint called")
-    return {"ok": True}
+    return {
+        "ok": True,
+        "service": "api",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": "Service is healthy.",
+    }
 
 
 # === Global error handler ===

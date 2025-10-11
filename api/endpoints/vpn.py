@@ -9,7 +9,7 @@ import uuid as uuidlib
 import fcntl
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from api.utils import xray
@@ -17,6 +17,8 @@ from ..utils.env import get_vless_host
 from ..utils.db import connect
 from api.utils.link import compose_vless_link
 from api.utils.logging import get_logger
+from api.utils import db
+from api.utils.auth import require_admin
 
 router = APIRouter()
 
@@ -27,9 +29,20 @@ logger = get_logger("endpoints.vpn")
 
 
 # === Helpers ===
-def _error_response(code: str, status: int = 400) -> JSONResponse:
+def _error_response(code: str, status: int = 400, message: str | None = None) -> JSONResponse:
     logger.warning("Returning error response", extra={"error": code, "status": status})
-    return JSONResponse(status_code=status, content={"ok": False, "error": code})
+    payload: dict[str, Any] = {"ok": False, "error": code}
+    if message:
+        payload["message"] = message
+    return JSONResponse(status_code=status, content=payload)
+
+
+def _validate_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    if limit < 1 or limit > 500:
+        raise ValueError("limit_out_of_range")
+    return limit
 
 
 def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> bool:
@@ -153,7 +166,7 @@ def _safe_add_client(username: str, uid: str) -> None:
     summary="Выдать VPN-ключ",
     description="Выдаёт VPN-ключ бесплатно (временный демо-режим)",
 )
-async def issue_vpn_key(request: Request):
+async def issue_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     username = data.get("username")
     if not username or not str(username).strip():
@@ -203,7 +216,7 @@ async def issue_vpn_key(request: Request):
 
 
 @router.post("/renew_key")
-async def renew_vpn_key(request: Request):
+async def renew_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     username = data.get("username")
     if not username or not str(username).strip():
@@ -234,7 +247,7 @@ async def renew_vpn_key(request: Request):
 
 
 @router.post("/disable_key")
-async def disable_vpn_key(request: Request):
+async def disable_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     uid = data.get("uuid")
     if not uid or not str(uid).strip():
@@ -244,7 +257,7 @@ async def disable_vpn_key(request: Request):
     logger.info("Disabling VPN key", extra={"uuid": uid})
 
     if not _deactivate(uid):
-        return _error_response("uuid_not_found", status=404)
+        return _error_response("uuid_not_found", status=404, message="Ключ не найден.")
 
     try:
         xray.remove_client(uid)
@@ -252,3 +265,42 @@ async def disable_vpn_key(request: Request):
         logger.exception("Failed to remove client from Xray", extra={"uuid": uid, "error": str(err)})
 
     return {"ok": True, "uuid": uid}
+
+
+@router.get("/active")
+def list_active_keys(
+    username: str | None = None,
+    active: bool | None = True,
+    limit: int | None = None,
+    _: None = Depends(require_admin),
+) -> dict[str, Any]:
+    """Return a filtered list of VPN keys."""
+
+    try:
+        limit = _validate_limit(limit)
+    except ValueError:
+        return _error_response(
+            "invalid_limit",
+            status=409,
+            message="Параметр limit должен быть в диапазоне 1..500.",
+        )
+
+    keys = db.get_users(username=username, active=active, limit=limit)
+    if not keys:
+        return _error_response(
+            "keys_not_found",
+            status=404,
+            message="Ключи не найдены по указанным фильтрам.",
+        )
+
+    formatted = [
+        {
+            "uuid": row.get("uuid"),
+            "username": row.get("username"),
+            "expires_at": row.get("expires_at"),
+            "active": bool(row.get("active")),
+        }
+        for row in keys
+    ]
+
+    return {"ok": True, "keys": formatted, "total": len(formatted)}

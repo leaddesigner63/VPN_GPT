@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import sys
 from importlib import reload
 from pathlib import Path
@@ -7,7 +6,6 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
-
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -18,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
 def test_client(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE", str(db_path))
+    monkeypatch.setenv("ADMIN_TOKEN", "secret-token")
 
     import api.utils.db as db_module
 
@@ -54,7 +53,11 @@ def test_client(tmp_path, monkeypatch):
 def test_issue_vpn_key_creates_new(test_client):
     client, mock_safe_add, db_module, warning_spy = test_client
 
-    response = client.post("/vpn/issue_key", json={"username": "alice", "days": 7})
+    response = client.post(
+        "/vpn/issue_key",
+        json={"username": "alice", "days": 7},
+        headers={"x-admin-token": "secret-token"},
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -78,12 +81,16 @@ def test_issue_vpn_key_conflict_returns_409(test_client):
     client, mock_safe_add, _, warning_spy = test_client
 
     first_response = client.post(
-        "/vpn/issue_key", json={"username": "bob", "days": 10}
+        "/vpn/issue_key",
+        json={"username": "bob", "days": 10},
+        headers={"x-admin-token": "secret-token"},
     )
     assert first_response.status_code == 200
 
     second_response = client.post(
-        "/vpn/issue_key", json={"username": "bob", "days": 10}
+        "/vpn/issue_key",
+        json={"username": "bob", "days": 10},
+        headers={"x-admin-token": "secret-token"},
     )
 
     assert second_response.status_code == 409
