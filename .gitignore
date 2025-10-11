@@ -3,6 +3,7 @@ __pycache__/
 *.log
 .env
 *.json
+!openapi_gpt.json
 *.sqlite3
 *.db
 .env

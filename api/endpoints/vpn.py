@@ -148,7 +148,11 @@ def _safe_add_client(username: str, uid: str) -> None:
 
 
 # === API endpoints ===
-@router.post("/issue_key")
+@router.post(
+    "/issue_key",
+    summary="Выдать VPN-ключ",
+    description="Выдаёт VPN-ключ бесплатно (временный демо-режим)",
+)
 async def issue_vpn_key(request: Request):
     data = await request.json()
     username = data.get("username")
@@ -189,7 +193,13 @@ async def issue_vpn_key(request: Request):
     # Добавляем клиента безопасно
     _safe_add_client(username, uid)
 
-    return {"ok": True, "link": link, "uuid": uid, "expires": expires}
+    return {
+        "ok": True,
+        "link": link,
+        "uuid": uid,
+        "expires": expires,
+        "message": "Ключ создан успешно.",
+    }
 
 
 @router.post("/renew_key")
