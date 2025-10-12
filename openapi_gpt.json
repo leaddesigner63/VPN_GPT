@@ -39,53 +39,63 @@
           "vpn"
         ],
         "operationId": "issueVpnKey",
-        "summary": "Создать VPN-ключ",
-        "description": "Создаёт новый VPN-ключ для пользователя и возвращает ссылку подключения.",
+        "summary": "Выдать VPN-ключ",
+        "description": "Создаёт новый ключ для email или возвращает уже существующий.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VpnIssueRequest"
+                "$ref": "#/components/schemas/IssueKeyRequest"
+              },
+              "examples": {
+                "new": {
+                  "value": {
+                    "email": "user@example.com"
+                  }
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Ключ успешно создан.",
+            "description": "Ключ найден или создан.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnKeyResponse"
+                  "$ref": "#/components/schemas/IssueKeyResponse"
                 },
                 "examples": {
-                  "success": {
+                  "created": {
                     "value": {
-                      "ok": true,
-                      "uuid": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
-                      "link": "vless://example@vpn-gpt.store",
-                      "expires": "2024-12-31",
-                      "message": "Ключ создан успешно."
+                      "email": "user@example.com",
+                      "key": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
+                      "created": true
+                    }
+                  },
+                  "existing": {
+                    "value": {
+                      "email": "user@example.com",
+                      "key": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
+                      "created": false
                     }
                   }
                 }
               }
             }
           },
-          "404": {
-            "description": "Пользователь не найден.",
+          "400": {
+            "description": "Некорректный запрос или email.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ErrorDetail"
                 },
                 "examples": {
-                  "user_not_found": {
+                  "invalid": {
                     "value": {
-                      "ok": false,
-                      "error": "user_not_found",
-                      "message": "Пользователь не найден."
+                      "detail": "invalid email format"
                     }
                   }
                 }
@@ -93,30 +103,157 @@
             }
           },
           "409": {
-            "description": "У пользователя уже есть активный ключ.",
+            "description": "Конфликт уникальности email.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ErrorDetail"
                 },
                 "examples": {
-                  "key_exists": {
+                  "conflict": {
                     "value": {
-                      "ok": false,
-                      "error": "key_already_exists",
-                      "message": "У пользователя уже есть активный ключ."
+                      "detail": "email conflict"
                     }
                   }
                 }
               }
             }
           },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
+          "502": {
+            "description": "Ошибка синхронизации с Xray.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "examples": {
+                  "xray": {
+                    "value": {
+                      "detail": "failed to sync key with xray"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vpn/key": {
+      "get": {
+        "tags": [
+          "vpn"
+        ],
+        "operationId": "getVpnKey",
+        "summary": "Получить VPN-ключ",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "description": "Email клиента",
+            "schema": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ключ найден.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный email.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "detail": "invalid email format"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ключ не найден.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "examples": {
+                  "missing": {
+                    "value": {
+                      "detail": "key not found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vpn/issue_missing_keys": {
+      "post": {
+        "tags": [
+          "vpn"
+        ],
+        "operationId": "issueMissingVpnKeys",
+        "summary": "Выдать отсутствующие VPN-ключи",
+        "responses": {
+          "200": {
+            "description": "Отчёт о выдаче ключей.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkIssueReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется авторизация администратора.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "value": {
+                      "detail": "unauthorized"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Ошибка синхронизации с Xray.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "examples": {
+                  "xray": {
+                    "value": {
+                      "detail": "failed to sync keys with xray"
+                    }
+                  }
                 }
               }
             }
@@ -1092,28 +1229,89 @@
       }
     },
     "schemas": {
-      "VpnIssueRequest": {
+      "IssueKeyRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "username": {
+          "email": {
             "type": "string",
-            "description": "Уникальный идентификатор пользователя"
-          },
-          "days": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 30,
-            "description": "Количество дней до истечения ключа"
-          },
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Необязательный UUID ключа для ручного задания"
+            "format": "email",
+            "description": "Email клиента, для которого требуется ключ"
           }
         },
         "required": [
-          "username"
+          "email"
+        ]
+      },
+      "IssueKeyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "Признак создания нового ключа"
+          }
+        },
+        "required": [
+          "email",
+          "key",
+          "created"
+        ]
+      },
+      "KeyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "key": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "email",
+          "key"
+        ]
+      },
+      "BulkIssueReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "issued": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issued",
+          "skipped"
+        ]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
         ]
       },
       "VpnRenewRequest": {

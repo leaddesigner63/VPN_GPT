@@ -77,13 +77,21 @@ DEDUP_SQL = (
 )
 
 @contextmanager
-def connect():
+def connect(*, autocommit: bool = True):
+    """Return a SQLite connection with optional auto-commit support."""
+
     logger.debug("Opening SQLite connection to %s", DB_PATH)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
+
     try:
         yield con
-        con.commit()
+        if autocommit:
+            con.commit()
+    except Exception:
+        logger.debug("Rolling back SQLite transaction due to error")
+        con.rollback()
+        raise
     finally:
         logger.debug("Closing SQLite connection to %s", DB_PATH)
         con.close()
@@ -96,6 +104,10 @@ def init_db():
             con.execute(statement)
         for statement in INDEX_SQL:
             con.execute(statement)
+        # Normalise empty UUID values to NULL for consistent "no key" semantics.
+        con.execute(
+            "UPDATE vpn_keys SET uuid=NULL WHERE uuid IS NOT NULL AND TRIM(uuid)=''"
+        )
     logger.info("SQLite schema check complete")
 
 def upsert_thread(tg_user_id: str, thread_id: str):
