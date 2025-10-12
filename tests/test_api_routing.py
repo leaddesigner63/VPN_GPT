@@ -28,20 +28,19 @@ def reload_main(monkeypatch: pytest.MonkeyPatch, *, root_path: str | None, serve
     return module
 
 
-def test_healthz_available_with_api_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = reload_main(monkeypatch, root_path="/api", server_url=None)
+def test_healthz_available_with_optional_api_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = reload_main(monkeypatch, root_path="", server_url=None)
     client = TestClient(module.app)
 
-    response = client.get("/api/healthz")
+    response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json()["ok"] is True
 
-    # Backwards compatibility for existing clients without the prefix.
-    legacy_response = client.get("/healthz")
-    assert legacy_response.status_code == 200
+    prefixed = client.get("/api/healthz")
+    assert prefixed.status_code == 200
 
     schema = client.get("/openapi.json").json()
-    assert schema["servers"] == [{"url": "https://vpn-gpt.store/api"}]
+    assert schema["servers"] == [{"url": "https://vpn-gpt.store"}]
 
 
 def test_openapi_server_matches_root_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,4 +52,18 @@ def test_openapi_server_matches_root_path(monkeypatch: pytest.MonkeyPatch) -> No
 
     schema = client.get("/openapi.json").json()
     assert schema["servers"] == [{"url": "https://vpn-gpt.store"}]
+
+
+def test_root_path_configuration_preserves_legacy_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = reload_main(monkeypatch, root_path="/api", server_url=None)
+    client = TestClient(module.app)
+
+    response = client.get("/api/healthz")
+    assert response.status_code == 200
+
+    legacy = client.get("/healthz")
+    assert legacy.status_code == 200
+
+    schema = client.get("/openapi.json").json()
+    assert schema["servers"] == [{"url": "https://vpn-gpt.store/api"}]
 

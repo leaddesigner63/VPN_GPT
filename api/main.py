@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from api.utils.logging import configure_logging, get_logger
 
@@ -18,7 +19,7 @@ configure_logging()
 logger = get_logger("api")
 
 DEFAULT_OPENAPI_BASE_URL = "https://vpn-gpt.store"
-DEFAULT_API_ROOT_PATH = "/api"
+DEFAULT_API_ROOT_PATH = ""
 
 
 def _normalise_root_path(raw_path: str | None) -> str:
@@ -37,6 +38,44 @@ def _normalise_root_path(raw_path: str | None) -> str:
 API_ROOT_PATH = _normalise_root_path(os.getenv("API_ROOT_PATH", DEFAULT_API_ROOT_PATH))
 
 
+class _PrefixStrippingMiddleware:
+    """Allow legacy clients to call endpoints using an additional prefix."""
+
+    def __init__(self, app: ASGIApp, *, prefix: str) -> None:
+        self.app = app
+        self._prefix = prefix.rstrip("/")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            prefix = self._prefix
+            if prefix and (path == prefix or path.startswith(prefix + "/")):
+                stripped = path[len(prefix) :] or "/"
+                scope = dict(scope)
+                scope["path"] = stripped
+                scope["raw_path"] = stripped.encode("utf-8")
+        await self.app(scope, receive, send)
+
+
+class _PrefixAppendingMiddleware:
+    """Support legacy clients that omit the configured root path."""
+
+    def __init__(self, app: ASGIApp, *, root_path: str) -> None:
+        self.app = app
+        self._root_path = root_path.rstrip("/")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            root_path = self._root_path
+            path = scope.get("path", "")
+            if root_path and not path.startswith(root_path):
+                combined = f"{root_path}{path}" if path != "/" else root_path or "/"
+                scope = dict(scope)
+                scope["path"] = combined
+                scope["raw_path"] = combined.encode("utf-8")
+        await self.app(scope, receive, send)
+
+
 def _build_server_url(base_url: str, root_path: str) -> str:
     """Compose the full server URL, appending the root path when necessary."""
 
@@ -49,6 +88,11 @@ def _build_server_url(base_url: str, root_path: str) -> str:
 DEFAULT_OPENAPI_SERVER = _build_server_url(DEFAULT_OPENAPI_BASE_URL, API_ROOT_PATH)
 
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0", root_path=API_ROOT_PATH)
+
+if API_ROOT_PATH:
+    app.add_middleware(_PrefixAppendingMiddleware, root_path=API_ROOT_PATH)
+else:
+    app.add_middleware(_PrefixStrippingMiddleware, prefix="/api")
 
 # === Routers ===
 from api.endpoints import admin, notify, status, users, vpn  # noqa: E402
