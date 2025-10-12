@@ -131,6 +131,21 @@ def test_issue_key_requires_authorization(test_app):
     assert response.json()["detail"] == "unauthorized"
 
 
+def test_issue_key_accepts_x_admin_header(test_app):
+    client, *_ = test_app
+
+    response = client.post(
+        "/vpn/issue_key",
+        json={"username": "bianca"},
+        headers={"X-Admin-Token": "secret"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["username"] == "bianca"
+
+
 def test_issue_key_updates_existing_user(test_app):
     client, db_module, add_recorder, _ = test_app
 
