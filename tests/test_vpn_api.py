@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import sys
+import types
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +38,7 @@ class Recorder:
 
 def _write_env(tmp_path: Path) -> None:
     env_path = Path("/root/VPN_GPT/.env")
+    env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text("VLESS_HOST=example.com\nVLESS_PORT=443\n", encoding="utf-8")
 
 
@@ -152,6 +155,66 @@ def test_issue_key_updates_existing_user(test_app):
     assert record["uuid"] == second_uuid
 
 
+def test_issue_key_activation_happens_after_xray(test_app, monkeypatch):
+    client, _, add_recorder, _ = test_app
+
+    import api.endpoints.vpn as vpn_module
+
+    real_connect = vpn_module.connect
+    operations: list[tuple] = []
+
+    @contextmanager
+    def tracking_connect(*, autocommit=True):
+        with real_connect(autocommit=autocommit) as real_conn:
+            class TrackingConnection:
+                def __init__(self, inner):
+                    self._inner = inner
+
+                def execute(self, sql, params=()):
+                    operations.append(("sql", " ".join(sql.split()), params))
+                    return self._inner.execute(sql, params)
+
+                def commit(self):
+                    operations.append(("commit",))
+                    return self._inner.commit()
+
+                def rollback(self):
+                    operations.append(("rollback",))
+                    return self._inner.rollback()
+
+                def __getattr__(self, item):
+                    return getattr(self._inner, item)
+
+            yield TrackingConnection(real_conn)
+
+    monkeypatch.setattr(vpn_module, "connect", tracking_connect)
+
+    def side_effect(uuid_value, username):
+        operations.append(("xray", uuid_value, username))
+
+    add_recorder.side_effect = side_effect
+
+    response = client.post(
+        "/vpn/issue_key",
+        json={"username": "flow"},
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+
+    insert_idx = next(
+        idx
+        for idx, op in enumerate(operations)
+        if op[0] == "sql" and "INSERT INTO vpn_keys" in op[1] and "VALUES" in op[1] and " 0" in op[1]
+    )
+    xray_idx = next(idx for idx, op in enumerate(operations) if op[0] == "xray")
+    activate_idx = next(
+        idx for idx, op in enumerate(operations) if op[0] == "sql" and "UPDATE vpn_keys SET active=1" in op[1]
+    )
+
+    assert insert_idx < xray_idx < activate_idx
+
+
 def test_renew_key_extends_expiry(test_app):
     client, _, _, _ = test_app
 
@@ -217,8 +280,16 @@ def test_get_user_returns_keys(test_app):
     assert body["keys"][0]["uuid"] == issued.json()["uuid"]
 
 
-def test_health_endpoint_available():
+def test_health_endpoint_available(monkeypatch):
     _write_env(Path("."))
+
+    fake_response = types.SimpleNamespace(status_code=200, text="")
+
+    def _fake_post(*args, **kwargs):
+        return fake_response
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(post=_fake_post))
+
     from api.main import app
 
     client = TestClient(app)

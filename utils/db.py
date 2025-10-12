@@ -121,11 +121,23 @@ def save_vpn_key(user_id, username, full_name, link, expires_at):
         if existing and existing[1] == 1:
             # активный ключ уже существует
             return None
-        c.execute("""
-            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, username, full_name, key_uuid, link, datetime.utcnow().isoformat(), expires_at.isoformat()))
+        c.execute(
+            """
+            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """,
+            (
+                user_id,
+                username,
+                full_name,
+                key_uuid,
+                link,
+                datetime.utcnow().isoformat(),
+                expires_at.isoformat(),
+            ),
+        )
         conn.commit()
+    return key_uuid
 
 
 def get_expiring_keys(days_before=3):
