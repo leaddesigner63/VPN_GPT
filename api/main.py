@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
@@ -19,6 +19,61 @@ logger = get_logger("api")
 DEFAULT_OPENAPI_SERVER = "https://vpn-gpt.store/api"
 
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
+
+
+def _normalise_prefix(value: str | None) -> str:
+    """Ensure router prefixes always have a leading slash and no trailing slash."""
+
+    if not value:
+        return ""
+
+    value = value.strip()
+    if not value:
+        return ""
+
+    if not value.startswith("/"):
+        value = "/" + value
+
+    # ``/`` should behave the same as an empty prefix.
+    if value == "/":
+        return ""
+
+    return value.rstrip("/")
+
+
+def _compose_prefix(base: str | None, extra: str | None) -> str:
+    """Join two router prefixes without introducing double slashes."""
+
+    base_norm = _normalise_prefix(base)
+    extra_norm = _normalise_prefix(extra)
+
+    if not base_norm:
+        return extra_norm
+    if not extra_norm:
+        return base_norm
+    return f"{base_norm}{extra_norm}"
+
+
+SECONDARY_API_PREFIX = _normalise_prefix(os.getenv("API_PREFIX", "/api"))
+
+
+def _register_router(router: APIRouter, *, prefix: str | None = None, **kwargs: Any) -> None:
+    """Register a router on the default path and optionally with an extra prefix.
+
+    Historically the project exposed endpoints on paths such as ``/vpn``.
+    Deployments, however, proxy the application under ``/api`` which resulted in
+    404 responses when the proxy forwarded requests like ``/api/vpn/issue_key``.
+    To preserve backwards compatibility we expose both variants by default and
+    allow disabling the secondary prefix via ``API_PREFIX``.
+    """
+
+    primary_prefix = _normalise_prefix(prefix)
+    app.include_router(router, prefix=primary_prefix, **kwargs)
+
+    if SECONDARY_API_PREFIX:
+        combined_prefix = _compose_prefix(SECONDARY_API_PREFIX, primary_prefix)
+        if combined_prefix != primary_prefix:
+            app.include_router(router, prefix=combined_prefix, **kwargs)
 
 # === Routers ===
 from api.endpoints import admin, notify, status, users, vpn  # noqa: E402
@@ -35,11 +90,11 @@ def ensure_database() -> None:
 
 
 # === Router registration ===
-app.include_router(vpn.router, prefix="/vpn", tags=["vpn"])
-app.include_router(users.router)
-app.include_router(notify.router)
-app.include_router(admin.router, prefix="/admin", tags=["admin"])
-app.include_router(status.router, tags=["health"])
+_register_router(vpn.router, prefix="/vpn", tags=["vpn"])
+_register_router(users.router)
+_register_router(notify.router)
+_register_router(admin.router, prefix="/admin", tags=["admin"])
+_register_router(status.router, tags=["health"])
 
 
 # === Health check ===
@@ -53,6 +108,15 @@ def healthz() -> dict[str, Any]:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": "Service is healthy.",
     }
+
+
+if SECONDARY_API_PREFIX:
+    app.add_api_route(
+        f"{SECONDARY_API_PREFIX}/healthz",
+        healthz,
+        methods=["GET"],
+        name="healthz-proxied",
+    )
 
 
 # === Global error handler ===

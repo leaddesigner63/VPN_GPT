@@ -42,6 +42,7 @@ def test_client(tmp_path, monkeypatch):
 
     app = FastAPI()
     app.include_router(vpn_module.router, prefix="/vpn")
+    app.include_router(vpn_module.router, prefix="/api/vpn")
 
     client = TestClient(app)
     try:
@@ -105,3 +106,25 @@ def test_issue_vpn_key_conflict_returns_409(test_client):
         warning_spy.call_args[0][0]
         == "User already has active key — skipping new issue."
     )
+
+
+def test_issue_vpn_key_available_under_api_prefix(test_client):
+    client, mock_safe_add, db_module, _ = test_client
+
+    response = client.post(
+        "/api/vpn/issue_key",
+        json={"username": "carol", "days": 3},
+        headers={"x-admin-token": "secret-token"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert mock_safe_add.call_count == 1
+
+    with db_module.connect() as conn:
+        row = conn.execute(
+            "SELECT username FROM vpn_keys WHERE username=?", ("carol",)
+        ).fetchone()
+
+    assert row is not None
