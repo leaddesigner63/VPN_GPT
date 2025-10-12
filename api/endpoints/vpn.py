@@ -9,7 +9,7 @@ import uuid as uuidlib
 import fcntl
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from api.utils import xray
@@ -17,6 +17,7 @@ from ..utils.env import get_vless_host
 from ..utils.db import connect
 from api.utils.link import compose_vless_link
 from api.utils.logging import get_logger
+from api.utils.auth import require_admin
 
 router = APIRouter()
 
@@ -27,9 +28,12 @@ logger = get_logger("endpoints.vpn")
 
 
 # === Helpers ===
-def _error_response(code: str, status: int = 400) -> JSONResponse:
+def _error_response(code: str, status: int = 400, message: str | None = None) -> JSONResponse:
     logger.warning("Returning error response", extra={"error": code, "status": status})
-    return JSONResponse(status_code=status, content={"ok": False, "error": code})
+    payload: dict[str, Any] = {"ok": False, "error": code}
+    if message:
+        payload["message"] = message
+    return JSONResponse(status_code=status, content=payload)
 
 
 def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> bool:
@@ -192,7 +196,7 @@ def _safe_add_client(username: str, uid: str) -> None:
     summary="Выдать VPN-ключ",
     description="Выдаёт VPN-ключ бесплатно (временный демо-режим)",
 )
-async def issue_vpn_key(request: Request):
+async def issue_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     username = data.get("username")
     if not username or not str(username).strip():
@@ -242,7 +246,7 @@ async def issue_vpn_key(request: Request):
 
 
 @router.post("/renew_key")
-async def renew_vpn_key(request: Request):
+async def renew_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     username = data.get("username")
     if not username or not str(username).strip():
@@ -273,7 +277,7 @@ async def renew_vpn_key(request: Request):
 
 
 @router.post("/disable_key")
-async def disable_vpn_key(request: Request):
+async def disable_vpn_key(request: Request, _: None = Depends(require_admin)):
     data = await request.json()
     uid = data.get("uuid")
     if not uid or not str(uid).strip():
@@ -283,7 +287,7 @@ async def disable_vpn_key(request: Request):
     logger.info("Disabling VPN key", extra={"uuid": uid})
 
     if not _deactivate(uid):
-        return _error_response("uuid_not_found", status=404)
+        return _error_response("uuid_not_found", status=404, message="Ключ не найден.")
 
     try:
         xray.remove_client(uid)
@@ -291,3 +295,26 @@ async def disable_vpn_key(request: Request):
         logger.exception("Failed to remove client from Xray", extra={"uuid": uid, "error": str(err)})
 
     return {"ok": True, "uuid": uid}
+
+
+@router.get("/active")
+def list_active_keys() -> dict[str, Any]:
+    """Возвращает список всех активных VPN-ключей."""
+
+    from api.utils.config import DB_PATH
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT username, uuid, link, issued_at, expires_at
+        FROM vpn_keys
+        WHERE active = 1
+        ORDER BY expires_at ASC
+    """
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+
+    return {"ok": True, "active": rows}
