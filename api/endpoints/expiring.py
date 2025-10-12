@@ -18,7 +18,7 @@ async def list_expiring_users():
             username TEXT,
             uuid TEXT,
             expires TEXT,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 0
         )
     """)
     today = datetime.date.today()

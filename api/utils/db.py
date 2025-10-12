@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS vpn_keys (
   link TEXT,
   issued_at TEXT,
   expires_at TEXT,
-  active INTEGER DEFAULT 1
+  active INTEGER DEFAULT 0
 );
 """
 

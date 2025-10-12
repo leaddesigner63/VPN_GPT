@@ -30,7 +30,7 @@ def init_db():
             link TEXT,
             issued_at TEXT,
             expires_at TEXT,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 0
         )
     """)
 
@@ -121,10 +121,21 @@ def save_vpn_key(user_id, username, full_name, link, expires_at):
         if existing and existing[1] == 1:
             # активный ключ уже существует
             return None
-        c.execute("""
-            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, username, full_name, key_uuid, link, datetime.utcnow().isoformat(), expires_at.isoformat()))
+        c.execute(
+            """
+            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        """,
+            (
+                user_id,
+                username,
+                full_name,
+                key_uuid,
+                link,
+                datetime.utcnow().isoformat(),
+                expires_at.isoformat(),
+            ),
+        )
         conn.commit()
 
 
