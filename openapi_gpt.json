@@ -13,24 +13,6 @@
         ],
         "summary": "Issue Vpn Key",
         "operationId": "issueVpnKey",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -47,7 +29,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueKeyResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/IssueKeyResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -62,7 +51,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/vpn/renew_key": {
@@ -72,24 +66,6 @@
         ],
         "summary": "Renew Vpn Key",
         "operationId": "renewVpnKey",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -106,8 +82,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Renewvpnkey"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RenewKeyResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -122,7 +104,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/vpn/disable_key": {
@@ -132,24 +119,6 @@
         ],
         "summary": "Disable Vpn Key",
         "operationId": "disableVpnKey",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -166,8 +135,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Disablevpnkey"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DisableKeyResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -182,7 +157,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/vpn/users/{username}": {
@@ -201,22 +181,6 @@
               "type": "string",
               "title": "Username"
             }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
           }
         ],
         "responses": {
@@ -225,8 +189,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Getuserbyname"
+                  "$ref": "#/components/schemas/GetUserResponse"
                 }
               }
             }
@@ -241,7 +204,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/users/": {
@@ -262,22 +230,6 @@
               "default": true,
               "title": "Active Only"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -286,8 +238,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response List Users Users  Get"
+                  "$ref": "#/components/schemas/UsersListResponse"
                 }
               }
             }
@@ -302,7 +253,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/users/expiring": {
@@ -323,22 +279,6 @@
               "default": 1,
               "title": "Days"
             }
-          },
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
           }
         ],
         "responses": {
@@ -347,8 +287,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Expiring Users Expiring Get"
+                  "$ref": "#/components/schemas/ExpiringUsersResponse"
                 }
               }
             }
@@ -363,7 +302,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/users/userinfo": {
@@ -391,8 +335,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response Get Userinfo Users Userinfo Get"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/UserInfoResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -424,8 +374,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "title": "Response List All Users Users All Get"
+                  "$ref": "#/components/schemas/AllTelegramUsersResponse"
                 }
               }
             }
@@ -446,7 +395,26 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/NotifySuccessResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyRequest"
               }
             }
           }
@@ -460,30 +428,14 @@
         ],
         "summary": "Backup Db",
         "operationId": "backupDatabase",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BackupDatabaseResponse"
+                }
               }
             }
           },
@@ -497,7 +449,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/healthz": {
@@ -511,11 +468,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "type": "object",
-                  "title": "Response Healthz Healthz Get"
+                  "$ref": "#/components/schemas/HealthzResponse"
                 }
               }
             }
@@ -657,6 +610,7 @@
         },
         "type": "object",
         "required": [
+          "ok",
           "username",
           "uuid",
           "link",
@@ -734,6 +688,317 @@
           "ok",
           "error"
         ]
+      },
+      "NotifyRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "text"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Telegram username без @"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text to send"
+          }
+        },
+        "title": "NotifyRequest"
+      },
+      "RenewKeyResponse": {
+        "type": "object",
+        "title": "RenewKeyResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "username": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "ISO 8601 expiry timestamp"
+          }
+        },
+        "required": [
+          "ok",
+          "username",
+          "expires_at"
+        ]
+      },
+      "DisableKeyResponse": {
+        "type": "object",
+        "title": "DisableKeyResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "uuid"
+        ]
+      },
+      "VpnKeySummary": {
+        "type": "object",
+        "title": "VpnKeySummary",
+        "properties": {
+          "uuid": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "link": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "uuid",
+          "active",
+          "expires_at",
+          "link"
+        ]
+      },
+      "GetUserResponse": {
+        "type": "object",
+        "title": "GetUserResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "username": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VpnKeySummary"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "username",
+          "keys"
+        ]
+      },
+      "VpnUserRecord": {
+        "type": "object",
+        "title": "VpnUserRecord",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "user_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "chat_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "username": {
+            "type": "string",
+            "nullable": true
+          },
+          "uuid": {
+            "type": "string",
+            "nullable": true
+          },
+          "link": {
+            "type": "string",
+            "nullable": true
+          },
+          "issued": {
+            "type": "string",
+            "nullable": true
+          },
+          "expires": {
+            "type": "string",
+            "nullable": true
+          },
+          "issued_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "active": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "UsersListResponse": {
+        "type": "object",
+        "title": "UsersListResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VpnUserRecord"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "users"
+        ]
+      },
+      "ExpiringUsersResponse": {
+        "type": "object",
+        "title": "ExpiringUsersResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VpnUserRecord"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "users"
+        ]
+      },
+      "UserInfoResponse": {
+        "type": "object",
+        "title": "UserInfoResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "user": {
+            "$ref": "#/components/schemas/VpnUserRecord"
+          }
+        },
+        "required": [
+          "ok",
+          "user"
+        ]
+      },
+      "TelegramUser": {
+        "type": "object",
+        "title": "TelegramUser",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "username",
+          "chat_id"
+        ]
+      },
+      "AllTelegramUsersResponse": {
+        "type": "object",
+        "title": "AllTelegramUsersResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TelegramUser"
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "users"
+        ]
+      },
+      "NotifySuccessResponse": {
+        "type": "object",
+        "title": "NotifySuccessResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "username": {
+            "type": "string"
+          },
+          "chat_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "username",
+          "chat_id"
+        ]
+      },
+      "BackupDatabaseResponse": {
+        "type": "object",
+        "title": "BackupDatabaseResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "backup": {
+            "type": "string",
+            "description": "Filesystem path to the created backup"
+          }
+        },
+        "required": [
+          "ok",
+          "backup"
+        ]
+      },
+      "HealthzResponse": {
+        "type": "object",
+        "title": "HealthzResponse",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "AdminToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Admin-Token",
+        "description": "Admin token required for privileged operations. Provide the value configured in the service."
       }
     }
   },
