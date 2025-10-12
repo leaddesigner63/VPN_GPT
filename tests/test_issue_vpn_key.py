@@ -98,3 +98,38 @@ def test_issue_vpn_key_conflict_returns_409(test_client):
         warning_spy.call_args[0][0]
         == "User already has active key — skipping new issue."
     )
+
+
+def test_issue_vpn_key_updates_inactive_record(test_client):
+    client, mock_safe_add, db_module, warning_spy = test_client
+
+    with db_module.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO vpn_keys (username, uuid, link, issued_at, expires_at, active)
+            VALUES (?, ?, ?, ?, ?, 0)
+            """,
+            ("carol", None, None, None, None),
+        )
+
+    response = client.post(
+        "/vpn/issue_key", json={"username": "carol", "days": 5}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["uuid"]
+    assert body["link"]
+
+    with db_module.connect() as conn:
+        row = conn.execute(
+            "SELECT uuid, link, active FROM vpn_keys WHERE username=?",
+            ("carol",),
+        ).fetchone()
+
+    assert row["active"] == 1
+    assert row["uuid"] == body["uuid"]
+    assert row["link"] == body["link"]
+    assert mock_safe_add.call_count == 1
+    warning_spy.assert_not_called()
