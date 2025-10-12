@@ -19,24 +19,45 @@ logger = get_logger("endpoints.vpn")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 
-def require_admin_token(authorization: str | None = Header(default=None, alias="Authorization")) -> None:
-    """Ensure all VPN endpoints are protected with the admin bearer token."""
+def require_admin_token(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> None:
+    """Ensure all VPN endpoints are protected with the admin token.
+
+    Historically the API expected a ``Bearer`` token in the ``Authorization`` header,
+    while other services in the project relied on the ``X-Admin-Token`` header.  To
+    avoid unexpected 401 responses we now accept both variants and validate them
+    against the configured ``ADMIN_TOKEN``.
+    """
 
     if not ADMIN_TOKEN:
         logger.error("ADMIN_TOKEN is not configured; denying access")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="admin_token_not_configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="admin_token_not_configured"
+        )
 
-    if not authorization:
-        logger.warning("Missing Authorization header for VPN endpoint")
+    candidate_tokens: list[str] = []
+
+    if authorization:
+        try:
+            scheme, token = authorization.split(" ", 1)
+        except ValueError:
+            logger.warning("Malformed Authorization header for VPN endpoint")
+        else:
+            if scheme.lower() == "bearer" and token.strip():
+                candidate_tokens.append(token.strip())
+            else:
+                logger.warning("Unsupported authorization scheme for VPN endpoint")
+
+    if x_admin_token:
+        candidate_tokens.append(x_admin_token.strip())
+
+    if not candidate_tokens:
+        logger.warning("Missing admin authentication for VPN endpoint")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
-    try:
-        scheme, token = authorization.split(" ", 1)
-    except ValueError:
-        logger.warning("Malformed Authorization header for VPN endpoint")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
-
-    if scheme.lower() != "bearer" or token.strip() != ADMIN_TOKEN:
+    if ADMIN_TOKEN not in candidate_tokens:
         logger.warning("Invalid admin token provided for VPN endpoint")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
