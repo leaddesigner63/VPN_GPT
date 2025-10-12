@@ -17,7 +17,6 @@ from ..utils.env import get_vless_host
 from ..utils.db import connect
 from api.utils.link import compose_vless_link
 from api.utils.logging import get_logger
-from api.utils import db
 from api.utils.auth import require_admin
 
 router = APIRouter()
@@ -35,14 +34,6 @@ def _error_response(code: str, status: int = 400, message: str | None = None) ->
     if message:
         payload["message"] = message
     return JSONResponse(status_code=status, content=payload)
-
-
-def _validate_limit(limit: int | None) -> int | None:
-    if limit is None:
-        return None
-    if limit < 1 or limit > 500:
-        raise ValueError("limit_out_of_range")
-    return limit
 
 
 def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> bool:
@@ -268,39 +259,23 @@ async def disable_vpn_key(request: Request, _: None = Depends(require_admin)):
 
 
 @router.get("/active")
-def list_active_keys(
-    username: str | None = None,
-    active: bool | None = True,
-    limit: int | None = None,
-    _: None = Depends(require_admin),
-) -> dict[str, Any]:
-    """Return a filtered list of VPN keys."""
+def list_active_keys() -> dict[str, Any]:
+    """Возвращает список всех активных VPN-ключей."""
 
-    try:
-        limit = _validate_limit(limit)
-    except ValueError:
-        return _error_response(
-            "invalid_limit",
-            status=409,
-            message="Параметр limit должен быть в диапазоне 1..500.",
-        )
+    from api.utils.config import DB_PATH
 
-    keys = db.get_users(username=username, active=active, limit=limit)
-    if not keys:
-        return _error_response(
-            "keys_not_found",
-            status=404,
-            message="Ключи не найдены по указанным фильтрам.",
-        )
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT username, uuid, link, issued_at, expires_at
+        FROM vpn_keys
+        WHERE active = 1
+        ORDER BY expires_at ASC
+    """
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
 
-    formatted = [
-        {
-            "uuid": row.get("uuid"),
-            "username": row.get("username"),
-            "expires_at": row.get("expires_at"),
-            "active": bool(row.get("active")),
-        }
-        for row in keys
-    ]
-
-    return {"ok": True, "keys": formatted, "total": len(formatted)}
+    return {"ok": True, "active": rows}

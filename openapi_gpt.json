@@ -163,90 +163,53 @@
     },
     "/vpn/active": {
       "get": {
-        "tags": [
-          "vpn"
-        ],
-        "summary": "List Active Keys",
-        "description": "Return a filtered list of VPN keys.",
-        "operationId": "vpnGetActive",
-        "parameters": [
-          {
-            "name": "username",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
-          },
-          {
-            "name": "active",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": true,
-              "title": "Active"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
-            }
-          }
-        ],
+        "operationId": "listActiveKeys",
+        "summary": "Получить список активных VPN-ключей",
+        "description": "Возвращает все активные VPN-ключи с датами истечения.",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Список активных ключей",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnKeyCollectionResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string"
+                          },
+                          "uuid": {
+                            "type": "string"
+                          },
+                          "link": {
+                            "type": "string"
+                          },
+                          "issued_at": {
+                            "type": "string"
+                          },
+                          "expires_at": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "active"
+                  ]
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminTokenAuth": []
-          }
-        ]
+        }
       }
     },
     "/users/": {
