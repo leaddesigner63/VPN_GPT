@@ -1,24 +1,26 @@
-import os
-import logging
 import asyncio
+import logging
+import os
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict
 
 import httpx
-from dotenv import load_dotenv
 from aiogram import BaseMiddleware, Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BufferedInputFile,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
 )
-from aiogram.client.default import DefaultBotProperties
+from dotenv import load_dotenv
 from openai import OpenAI
 
+from api.utils import db as api_db
 from utils.qrgen import make_qr
 
 # === Инициализация ===
@@ -34,13 +36,107 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 dp = Dispatcher()
 client = OpenAI(api_key=GPT_API_KEY)
 
+
+class VPNAPIError(RuntimeError):
+    """Wrapper for API errors returned by the VPN backend."""
+
+    def __init__(self, code: str, *, status: int | None = None, details: dict | None = None):
+        super().__init__(code)
+        self.code = code
+        self.status = status
+        self.details = details or {}
+
+
+@dataclass(slots=True)
+class VPNKey:
+    username: str
+    uuid: str
+    link: str
+    expires_at: str
+
+
+@dataclass(slots=True)
+class RenewInfo:
+    username: str
+    expires_at: str
+
+
+class VPNAPIClient:
+    """Async wrapper around the FastAPI backend used by GPT and the bot."""
+
+    def __init__(self, base_url: str, admin_token: str | None = None, *, timeout: float = 10.0):
+        self.base_url = base_url.rstrip("/")
+        self.admin_token = admin_token or None
+        self._timeout = timeout
+
+    def _headers(self) -> dict[str, str]:
+        if not self.admin_token:
+            return {}
+        return {"X-Admin-Token": self.admin_token}
+
+    async def _request(self, method: str, path: str, *, json: dict | None = None, params: dict | None = None) -> dict:
+        url = f"{self.base_url}{path}"
+        async with httpx.AsyncClient(timeout=self._timeout) as session:
+            response = await session.request(method, url, json=json, params=params, headers=self._headers())
+
+        status = response.status_code
+        try:
+            payload = response.json()
+        except ValueError as exc:  # pragma: no cover - defensive
+            logging.exception("VPN API вернул не-JSON", extra={"url": url, "status": status})
+            raise VPNAPIError("invalid_json", status=status) from exc
+
+        if status >= 400:
+            error_code = payload.get("detail") if isinstance(payload, dict) else "http_error"
+            raise VPNAPIError(str(error_code), status=status, details=payload if isinstance(payload, dict) else None)
+
+        if isinstance(payload, dict) and payload.get("ok") is False:
+            raise VPNAPIError(str(payload.get("error", "unknown_error")), status=status, details=payload)
+
+        return payload
+
+    async def issue_key(self, username: str, *, days: int = 3) -> VPNKey:
+        payload = await self._request(
+            "POST",
+            "/vpn/issue_key",
+            json={"username": username, "days": days},
+        )
+        return VPNKey(
+            username=payload["username"],
+            uuid=payload["uuid"],
+            link=payload["link"],
+            expires_at=payload["expires_at"],
+        )
+
+    async def renew_key(self, username: str, *, days: int = 30) -> RenewInfo:
+        payload = await self._request(
+            "POST",
+            "/vpn/renew_key",
+            json={"username": username, "days": days},
+        )
+        return RenewInfo(username=payload["username"], expires_at=payload["expires_at"])
+
+    async def get_my_key(self, *, username: str | None = None, chat_id: int | None = None) -> dict:
+        params: dict[str, Any] = {}
+        if username:
+            params["username"] = username
+        if chat_id is not None:
+            params["chat_id"] = chat_id
+        return await self._request("GET", "/vpn/my_key", params=params)
+
+    async def list_users(self) -> dict:
+        return await self._request("GET", "/users/", params={"active_only": True})
+
+
+vpn_api = VPNAPIClient(VPN_API_URL, admin_token=ADMIN_TOKEN or None)
+
 DB_PATH = "/root/VPN_GPT/dialogs.db"
 
 # === Логирование ===
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler("/root/VPN_GPT/bot.log"), logging.StreamHandler()]
+    handlers=[logging.FileHandler("/root/VPN_GPT/bot.log"), logging.StreamHandler()],
 )
 
 # === Главное меню Telegram ===
@@ -55,9 +151,17 @@ main_kb = ReplyKeyboardMarkup(
 )
 
 # === База данных ===
-def ensure_tables():
+def ensure_tables() -> None:
+    """Подготовка БД под требования API и бота."""
+
+    try:
+        api_db.init_db()
+    except Exception:  # pragma: no cover - инициализация БД не критична для тестов
+        logging.exception("Не удалось выполнить миграции API для БД")
+
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS tg_users (
                 username TEXT PRIMARY KEY,
                 chat_id INTEGER,
@@ -65,7 +169,8 @@ def ensure_tables():
                 last_name TEXT,
                 created_at TEXT
             )
-        """)
+            """
+        )
         conn.commit()
 
 def save_user(message: Message):
@@ -85,60 +190,116 @@ def save_user(message: Message):
     return username
 
 # === Обработчики ===
-async def _request_vpn_key(username: str, days: int = 30) -> dict[str, Any]:
-    params = {"x-admin-token": ADMIN_TOKEN} if ADMIN_TOKEN else None
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{VPN_API_URL.rstrip('/')}/vpn/issue_key",
-            json={"username": username, "days": days},
-            params=params,
-        )
-    response.raise_for_status()
-    return response.json()
-
-
 async def issue_and_send_key(message: Message, username: str) -> None:
     await message.answer("⏳ Создаю тебе VPN-ключ…", reply_markup=main_kb)
     try:
-        payload = await _request_vpn_key(username)
-        link = payload.get("link")
-        if not link:
-            raise ValueError("API не вернул ссылку для подключения")
-
-        await message.answer(
-            "🎁 Твой бесплатный VPN-ключ готов!\n\n"
-            f"🔗 Ссылка:\n{link}",
-            reply_markup=main_kb,
+        vpn_key = await vpn_api.issue_key(username)
+    except VPNAPIError as api_error:
+        logging.warning(
+            "Не удалось выдать ключ", extra={"username": username, "error": api_error.code, "status": api_error.status}
         )
-
-        qr_stream = make_qr(link)
-        await message.answer_photo(
-            BufferedInputFile(qr_stream.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-    except httpx.HTTPStatusError as http_err:
-        status = http_err.response.status_code
-        logging.error(
-            "API вернул ошибку при выдаче ключа", exc_info=True, extra={"username": username, "status": status}
-        )
-        if status == 409:
+        if api_error.code in {"user_has_active_key", "duplicate"}:
             await message.answer(
                 "ℹ️ У тебя уже есть активный VPN-ключ. Проверь предыдущие сообщения или продли текущий.",
                 reply_markup=main_kb,
             )
+        elif api_error.code == "invalid_days":
+            await message.answer("⚠️ Некорректный срок действия ключа.", reply_markup=main_kb)
         else:
+            status_info = f" (код {api_error.status})" if api_error.status else ""
             await message.answer(
-                "⚠️ Не получилось создать ключ. Попробуй ещё раз позже."
-                f"\nКод ошибки: {status}",
+                "⚠️ Не получилось создать ключ. Попробуй ещё раз позже." + status_info,
                 reply_markup=main_kb,
             )
-        logging.debug("API response body: %s", http_err.response.text)
-    except Exception as err:
+        return
+    except Exception:
         logging.exception("Сбой при выдаче VPN-ключа", extra={"username": username})
         await message.answer(
             "⚠️ Не получилось создать ключ. Попробуй ещё раз чуть позже.",
             reply_markup=main_kb,
         )
+        return
+
+    await message.answer(
+        "🎁 Твой бесплатный VPN-ключ готов!\n\n"
+        f"🔗 Ссылка:\n{vpn_key.link}\n"
+        f"⏳ Действует до: {vpn_key.expires_at}",
+        reply_markup=main_kb,
+    )
+
+    qr_stream = make_qr(vpn_key.link)
+    await message.answer_photo(
+        BufferedInputFile(qr_stream.getvalue(), filename="vpn_key.png"),
+        caption="📱 Отсканируй QR-код для быстрого подключения",
+    )
+
+
+async def renew_vpn_key(message: Message, username: str) -> None:
+    await message.answer("♻️ Продляю твой VPN…", reply_markup=main_kb)
+    try:
+        info = await vpn_api.renew_key(username)
+    except VPNAPIError as api_error:
+        logging.warning(
+            "Не удалось продлить ключ", extra={"username": username, "error": api_error.code, "status": api_error.status}
+        )
+        if api_error.code == "user_not_found":
+            await message.answer(
+                "⚠️ Активный ключ не найден. Нажми «Получить VPN», чтобы создать новый.",
+                reply_markup=main_kb,
+            )
+        elif api_error.code == "invalid_days":
+            await message.answer("⚠️ Некорректный срок продления.", reply_markup=main_kb)
+        else:
+            status_info = f" (код {api_error.status})" if api_error.status else ""
+            await message.answer(
+                "⚠️ Не получилось продлить ключ." + status_info,
+                reply_markup=main_kb,
+            )
+        return
+    except Exception:
+        logging.exception("Сбой при продлении VPN-ключа", extra={"username": username})
+        await message.answer(
+            "⚠️ Произошла ошибка при продлении. Попробуй снова позже.",
+            reply_markup=main_kb,
+        )
+        return
+
+    await message.answer(
+        "✅ Ключ успешно продлён!\n"
+        f"Новый срок действия до: {info.expires_at}",
+        reply_markup=main_kb,
+    )
+
+
+async def send_key_status(message: Message, username: str) -> None:
+    try:
+        payload = await vpn_api.get_my_key(username=username, chat_id=message.chat.id)
+    except VPNAPIError as api_error:
+        logging.warning(
+            "Не удалось получить статус ключа",
+            extra={"username": username, "error": api_error.code, "status": api_error.status},
+        )
+        await message.answer("⚠️ Не удалось получить информацию о ключе. Попробуй позже.", reply_markup=main_kb)
+        return
+    except Exception:
+        logging.exception("Сбой при запросе статуса ключа", extra={"username": username})
+        await message.answer("⚠️ Произошла ошибка. Попробуй снова позже.", reply_markup=main_kb)
+        return
+
+    if not payload.get("ok"):
+        await message.answer("ℹ️ Активный ключ не найден. Нажми «Получить VPN», чтобы создать новый.", reply_markup=main_kb)
+        return
+
+    link = payload.get("link")
+    expires = payload.get("expires_at")
+    uuid_value = payload.get("uuid")
+    text = (
+        "🔐 Твой текущий VPN-ключ\n"
+        f"UUID: <code>{uuid_value}</code>\n"
+        f"Ссылка: {link}\n"
+        f"Действует до: {expires}"
+    )
+    await message.answer(text, reply_markup=main_kb)
 
 
 @dp.message(CommandStart())
@@ -154,6 +315,53 @@ async def start_cmd(message: Message):
     await message.answer(text, reply_markup=main_kb)
     await issue_and_send_key(message, username)
 
+
+@dp.message(Command("buy"))
+async def buy_cmd(message: Message):
+    username = save_user(message)
+    await issue_and_send_key(message, username)
+
+
+@dp.message(Command("renew"))
+async def renew_cmd(message: Message):
+    username = save_user(message)
+    await renew_vpn_key(message, username)
+
+
+@dp.message(Command("mykey"))
+async def my_key_cmd(message: Message):
+    username = save_user(message)
+    await send_key_status(message, username)
+
+
+@dp.message(Command("admin"))
+async def admin_cmd(message: Message):
+    username = save_user(message)
+    if not ADMIN_ID or str(message.from_user.id) != str(ADMIN_ID):
+        await message.answer("⛔️ Эта команда доступна только администратору.", reply_markup=main_kb)
+        return
+
+    try:
+        users_payload = await vpn_api.list_users()
+    except VPNAPIError as api_error:
+        logging.warning("Не удалось получить список пользователей", extra={"error": api_error.code})
+        await message.answer("⚠️ Не получилось получить статистику. Попробуй позже.", reply_markup=main_kb)
+        return
+    except Exception:
+        logging.exception("Сбой при запросе списка пользователей", extra={"username": username})
+        await message.answer("⚠️ Произошла ошибка. Попробуй ещё раз позднее.", reply_markup=main_kb)
+        return
+
+    users = users_payload.get("users", [])
+    total = len(users)
+    active_links = sum(1 for item in users if item.get("active"))
+    text = (
+        "🛠 <b>Админ-панель</b>\n"
+        f"Всего записей: {total}\n"
+        f"Активных ключей: {active_links}"
+    )
+    await message.answer(text, reply_markup=main_kb)
+
 @dp.message()
 async def handle_message(message: Message):
     username = save_user(message)
@@ -162,6 +370,18 @@ async def handle_message(message: Message):
     normalized = user_text.lower()
     if normalized in {"/buy", "buy", "получить vpn", "получить доступ"} or user_text == "💡 Получить VPN":
         await issue_and_send_key(message, username)
+        return
+
+    if normalized in {"/renew", "renew", "продлить", "продлить vpn"} or user_text == "♻️ Продлить VPN":
+        await renew_vpn_key(message, username)
+        return
+
+    if normalized in {"/mykey", "мой ключ", "ключ", "посмотреть ключ"}:
+        await send_key_status(message, username)
+        return
+
+    if normalized == "/admin":
+        await admin_cmd(message)
         return
 
     # Визуальный отклик — бот «думает»
@@ -196,6 +416,7 @@ async def main():
     ensure_tables()
     logging.info("Бот VPN_GPT запущен и готов принимать сообщения.")
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
