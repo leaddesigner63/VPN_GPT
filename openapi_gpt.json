@@ -522,6 +522,53 @@
           }
         }
       }
+    },
+    "/vpn/my_key": {
+      "get": {
+        "operationId": "getMyKey",
+        "summary": "Получить активный ключ пользователя",
+        "security": [],
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chat_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/IssueKeyResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -601,6 +648,11 @@
           "expires_at": {
             "type": "string",
             "title": "Expires At"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
           }
         },
         "type": "object",
@@ -608,7 +660,8 @@
           "username",
           "uuid",
           "link",
-          "expires_at"
+          "expires_at",
+          "active"
         ],
         "title": "IssueKeyResponse"
       },
@@ -662,6 +715,25 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ErrorResponse": {
+        "title": "ErrorResponse",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": false
+          },
+          "error": {
+            "type": "string",
+            "title": "Error"
+          }
+        },
+        "required": [
+          "ok",
+          "error"
+        ]
       }
     }
   },

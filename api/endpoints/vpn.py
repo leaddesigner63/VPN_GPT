@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import os
+import random
 import uuid
 from typing import Any
 
@@ -66,7 +68,8 @@ def require_admin_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
 
 
-router = APIRouter(dependencies=[Depends(require_admin_token)])
+router = APIRouter()
+admin_router = APIRouter(dependencies=[Depends(require_admin_token)])
 
 
 class IssueKeyRequest(BaseModel):
@@ -80,6 +83,7 @@ class IssueKeyResponse(BaseModel):
     uuid: str
     link: str
     expires_at: str
+    active: bool = True
 
 
 class RenewKeyRequest(BaseModel):
@@ -165,6 +169,59 @@ def _get_active_key(username: str) -> dict[str, Any] | None:
         return None if row is None else dict(row)
 
 
+def _format_utc(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                parsed = dt.datetime.strptime(value, fmt)
+                break
+            except ValueError:
+                continue
+        else:  # pragma: no cover - defensive
+            logger.warning("Failed to parse expires_at value", extra={"value": value})
+            return value
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.UTC)
+    else:
+        parsed = parsed.astimezone(dt.UTC)
+
+    return parsed.isoformat().replace("+00:00", "Z")
+
+
+def _select_active_key(*, chat_id: int | None = None, username: str | None = None) -> dict[str, Any] | None:
+    if chat_id is None and username is None:
+        raise ValueError("Either chat_id or username must be provided")
+
+    query = [
+        "SELECT username, uuid, link, expires_at, active",
+        "FROM vpn_keys",
+        "WHERE active = 1",
+    ]
+    params: tuple[Any, ...]
+
+    if chat_id is not None:
+        query.append("AND chat_id = ?")
+        params = (chat_id,)
+    else:
+        query.append("AND username = ?")
+        params = (username,)
+
+    query.append("ORDER BY expires_at DESC")
+    query.append("LIMIT 1")
+    sql = " ".join(query)
+
+    with connect() as conn:
+        cur = conn.execute(sql, params)
+        row = cur.fetchone()
+        return None if row is None else dict(row)
+
+
 def _update_expiry(username: str, new_exp: dt.datetime) -> bool:
     with connect() as conn:
         cur = conn.execute(
@@ -180,7 +237,61 @@ def _deactivate(uuid_value: str) -> bool:
         return cur.rowcount > 0
 
 
-@router.post(
+def _normalise_lookup_username(raw: str | None) -> str:
+    if raw is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="username_or_chat_id_required")
+
+    username = raw.strip()
+    if username.startswith("@"):
+        username = username[1:].strip()
+
+    if not username:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="username_or_chat_id_required")
+
+    return username
+
+
+async def _sleep_bruteforce_delay() -> None:
+    await asyncio.sleep(random.uniform(0.1, 0.2))
+
+
+@router.get("/my_key", operation_id="getMyKey")
+@router.get("/my_key/", operation_id="getMyKeySlash", include_in_schema=False)
+async def get_my_key(username: str | None = None, chat_id: int | None = None) -> dict[str, Any]:
+    if username is None and chat_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="username_or_chat_id_required")
+
+    record: dict[str, Any] | None
+    lookup_username: str | None = None
+
+    if chat_id is not None:
+        record = _select_active_key(chat_id=chat_id)
+    else:
+        lookup_username = _normalise_lookup_username(username)
+        record = _select_active_key(username=lookup_username)
+
+    if record is None:
+        await _sleep_bruteforce_delay()
+        logger.warning(
+            "Active VPN key not found", extra={"chat_id": chat_id, "username": lookup_username or username}
+        )
+        return {"ok": False, "error": "not_found"}
+
+    expires_at = _format_utc(record.get("expires_at"))
+    response_username = record.get("username") or lookup_username or username
+
+    await _sleep_bruteforce_delay()
+    return {
+        "ok": True,
+        "username": response_username,
+        "uuid": record.get("uuid"),
+        "link": record.get("link"),
+        "expires_at": expires_at,
+        "active": bool(record.get("active", 0)),
+    }
+
+
+@admin_router.post(
     "/issue_key",
     operation_id="issueVpnKey",
     response_model=IssueKeyResponse,
@@ -235,10 +346,11 @@ def issue_vpn_key(payload: IssueKeyRequest) -> IssueKeyResponse:
         uuid=uuid_value,
         link=link,
         expires_at=expires_at.isoformat(),
+        active=True,
     )
 
 
-@router.post("/renew_key", operation_id="renewVpnKey")
+@admin_router.post("/renew_key", operation_id="renewVpnKey")
 def renew_vpn_key(payload: RenewKeyRequest) -> dict[str, Any]:
     username = _normalise_username(payload.username)
 
@@ -261,7 +373,7 @@ def renew_vpn_key(payload: RenewKeyRequest) -> dict[str, Any]:
     return {"ok": True, "username": username, "expires_at": new_exp.isoformat()}
 
 
-@router.post("/disable_key", operation_id="disableVpnKey")
+@admin_router.post("/disable_key", operation_id="disableVpnKey")
 def disable_vpn_key(payload: DisableKeyRequest) -> dict[str, Any]:
     uuid_value = payload.uuid.strip()
     if not uuid_value:
@@ -278,7 +390,7 @@ def disable_vpn_key(payload: DisableKeyRequest) -> dict[str, Any]:
     return {"ok": True, "uuid": uuid_value}
 
 
-@router.get("/users/{username}", operation_id="getUserByName")
+@admin_router.get("/users/{username}", operation_id="getUserByName")
 def get_user(username: str) -> dict[str, Any]:
     username = _normalise_username(username)
     key = _get_active_key(username)
@@ -296,4 +408,7 @@ def get_user(username: str) -> dict[str, Any]:
             }
         ],
     }
+
+
+router.include_router(admin_router)
 

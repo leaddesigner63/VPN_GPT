@@ -343,6 +343,71 @@ def test_get_user_returns_keys(test_app):
     assert body["keys"][0]["uuid"] == issued.json()["uuid"]
 
 
+def test_get_my_key_by_username(test_app):
+    client, _, _, _ = test_app
+
+    issued = client.post(
+        "/vpn/issue_key",
+        json={"username": "irene"},
+        headers=_auth_headers(),
+    )
+    assert issued.status_code == 200
+
+    response = client.get("/vpn/my_key", params={"username": "@irene"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "ok": True,
+        "username": "irene",
+        "uuid": issued.json()["uuid"],
+        "link": issued.json()["link"],
+        "expires_at": issued.json()["expires_at"].replace("+00:00", "Z"),
+        "active": True,
+    }
+
+
+def test_get_my_key_by_chat_id_has_priority(test_app):
+    client, db_module, _, _ = test_app
+
+    issued = client.post(
+        "/vpn/issue_key",
+        json={"username": "julia"},
+        headers=_auth_headers(),
+    )
+    assert issued.status_code == 200
+
+    with db_module.connect() as conn:
+        conn.execute(
+            "UPDATE vpn_keys SET chat_id=? WHERE username=?", (123456789, "julia")
+        )
+
+    response = client.get(
+        "/vpn/my_key",
+        params={"chat_id": 123456789, "username": "ignored"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["username"] == "julia"
+    assert body["uuid"] == issued.json()["uuid"]
+    assert body["active"] is True
+
+
+def test_get_my_key_returns_not_found(test_app):
+    client, _, _, _ = test_app
+
+    response = client.get("/vpn/my_key", params={"username": "missing"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": False, "error": "not_found"}
+
+
+def test_get_my_key_requires_query_parameter(test_app):
+    client, _, _, _ = test_app
+
+    response = client.get("/vpn/my_key")
+    assert response.status_code == 422
+
+
 def test_health_endpoint_available():
     _write_env(Path("."))
 
