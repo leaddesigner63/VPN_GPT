@@ -5,7 +5,7 @@ import os
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 def require_admin_token(
     authorization: str | None = Header(default=None, alias="Authorization"),
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    x_admin_token_query: str | None = Query(default=None, alias="x-admin-token"),
 ) -> None:
     """Ensure all VPN endpoints are protected with the admin token.
 
@@ -52,6 +53,9 @@ def require_admin_token(
 
     if x_admin_token:
         candidate_tokens.append(x_admin_token.strip())
+
+    if x_admin_token_query:
+        candidate_tokens.append(x_admin_token_query.strip())
 
     if not candidate_tokens:
         logger.warning("Missing admin authentication for VPN endpoint")
