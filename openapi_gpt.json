@@ -1,269 +1,68 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "VPN_GPT Unified API",
-    "version": "2.0.0",
-    "description": "Полный API проекта VPN_GPT для GPT-интеграции, управления пользователями, ключами и системой."
+    "title": "VPN_GPT Action API",
+    "description": "API for GPT Actions — manage VPN keys, users, and notifications",
+    "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://vpn-gpt.store/api"
-    }
-  ],
-  "tags": [
-    {
-      "name": "vpn",
-      "description": "Операции с VPN-ключами"
-    },
-    {
-      "name": "users",
-      "description": "Получение информации о пользователях"
-    },
-    {
-      "name": "notify",
-      "description": "Уведомления и рассылки"
-    },
-    {
-      "name": "admin",
-      "description": "Администрирование и резервное копирование"
-    },
-    {
-      "name": "health",
-      "description": "Системный мониторинг"
-    }
-  ],
   "paths": {
     "/vpn/issue_key": {
       "post": {
         "tags": [
           "vpn"
         ],
+        "summary": "Issue Vpn Key",
         "operationId": "issueVpnKey",
-        "summary": "Выдать VPN-ключ",
-        "description": "Создаёт новый ключ для email или возвращает уже существующий.",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/IssueKeyRequest"
-              },
-              "examples": {
-                "new": {
-                  "value": {
-                    "email": "user@example.com"
-                  }
-                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Ключ найден или создан.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/IssueKeyResponse"
-                },
-                "examples": {
-                  "created": {
-                    "value": {
-                      "email": "user@example.com",
-                      "key": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
-                      "created": true
-                    }
-                  },
-                  "existing": {
-                    "value": {
-                      "email": "user@example.com",
-                      "key": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
-                      "created": false
-                    }
-                  }
                 }
               }
             }
           },
-          "400": {
-            "description": "Некорректный запрос или email.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "invalid": {
-                    "value": {
-                      "detail": "invalid email format"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт уникальности email.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "conflict": {
-                    "value": {
-                      "detail": "email conflict"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Ошибка синхронизации с Xray.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "xray": {
-                    "value": {
-                      "detail": "failed to sync key with xray"
-                    }
-                  }
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
         }
-      }
-    },
-    "/vpn/key": {
-      "get": {
-        "tags": [
-          "vpn"
-        ],
-        "operationId": "getVpnKey",
-        "summary": "Получить VPN-ключ",
-        "parameters": [
-          {
-            "name": "email",
-            "in": "query",
-            "required": true,
-            "description": "Email клиента",
-            "schema": {
-              "type": "string",
-              "format": "email"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Ключ найден.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KeyResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Некорректный email.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "invalid": {
-                    "value": {
-                      "detail": "invalid email format"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Ключ не найден.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "missing": {
-                    "value": {
-                      "detail": "key not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/vpn/issue_missing_keys": {
-      "post": {
-        "tags": [
-          "vpn"
-        ],
-        "operationId": "issueMissingVpnKeys",
-        "summary": "Выдать отсутствующие VPN-ключи",
-        "responses": {
-          "200": {
-            "description": "Отчёт о выдаче ключей.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BulkIssueReport"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Требуется авторизация администратора.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "unauthorized": {
-                    "value": {
-                      "detail": "unauthorized"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Ошибка синхронизации с Xray.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "examples": {
-                  "xray": {
-                    "value": {
-                      "detail": "failed to sync keys with xray"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
       }
     },
     "/vpn/renew_key": {
@@ -271,86 +70,59 @@
         "tags": [
           "vpn"
         ],
+        "summary": "Renew Vpn Key",
         "operationId": "renewVpnKey",
-        "summary": "Продлить VPN-ключ",
-        "description": "Продлевает срок действия существующего VPN-ключа пользователя.",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VpnRenewRequest"
+                "$ref": "#/components/schemas/RenewKeyRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Срок действия ключа продлён.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnKeyResponse"
-                },
-                "examples": {
-                  "success": {
-                    "value": {
-                      "ok": true,
-                      "uuid": "6b82e1c1-0f85-4f94-8d6d-4df32a3c1d5b",
-                      "link": "vless://example@vpn-gpt.store",
-                      "expires": "2025-01-31",
-                      "message": "Ключ продлён на 30 дней."
-                    }
-                  }
+                  "type": "object",
+                  "title": "Response Renewvpnkey"
                 }
               }
             }
           },
-          "404": {
-            "description": "Активный ключ не найден.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Невозможно продлить ключ.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "conflict": {
-                    "value": {
-                      "ok": false,
-                      "error": "renew_conflict",
-                      "message": "Продление невозможно для данного ключа."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/vpn/disable_key": {
@@ -358,242 +130,179 @@
         "tags": [
           "vpn"
         ],
+        "summary": "Disable Vpn Key",
         "operationId": "disableVpnKey",
-        "summary": "Отключить VPN-ключ",
-        "description": "Деактивирует указанный VPN-ключ и запрещает дальнейшее использование.",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VpnDisableRequest"
+                "$ref": "#/components/schemas/DisableKeyRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Ключ успешно отключён.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ActionResponse"
+                  "type": "object",
+                  "title": "Response Disablevpnkey"
                 }
               }
             }
           },
-          "404": {
-            "description": "Ключ не найден.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Ключ уже деактивирован.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
-    "/vpn/active": {
+    "/vpn/users/{username}": {
       "get": {
         "tags": [
           "vpn"
         ],
-        "operationId": "listActiveKeys",
-        "summary": "Получить список активных ключей",
-        "description": "Возвращает перечень всех активных VPN-ключей с информацией об их истечении.",
+        "summary": "Get User",
+        "operationId": "getUserByName",
         "parameters": [
           {
             "name": "username",
-            "in": "query",
-            "required": false,
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string",
-              "description": "Telegram username пользователя"
+              "title": "Username"
             }
           },
           {
-            "name": "active",
-            "in": "query",
+            "name": "authorization",
+            "in": "header",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "description": "Фильтр по активным (true) или неактивным (false) записям"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "description": "Ограничение количества возвращаемых записей"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Список активных ключей.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ActiveKeysResponse"
+                  "type": "object",
+                  "title": "Response Getuserbyname"
                 }
               }
             }
           },
-          "404": {
-            "description": "Ключи не найдены.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт фильтров запроса.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
-    "/users": {
+    "/users/": {
       "get": {
         "tags": [
           "users"
         ],
+        "summary": "List Users",
+        "description": "Return VPN users from the shared SQLite database.",
         "operationId": "listUsers",
-        "summary": "Получить список всех пользователей",
-        "description": "Возвращает полный список пользователей с ключами и статусами.",
         "parameters": [
           {
-            "name": "username",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "Telegram username пользователя"
-            }
-          },
-          {
-            "name": "active",
+            "name": "active_only",
             "in": "query",
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Фильтр по активным (true) или неактивным (false) записям"
+              "default": true,
+              "title": "Active Only"
             }
           },
           {
-            "name": "limit",
-            "in": "query",
+            "name": "x-admin-token",
+            "in": "header",
             "required": false,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "description": "Ограничение количества возвращаемых записей"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Список пользователей получен.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UsersResponse"
+                  "type": "object",
+                  "title": "Response List Users Users  Get"
                 }
               }
             }
           },
-          "404": {
-            "description": "Пользователи не найдены.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт фильтров запроса.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/users/expiring": {
@@ -601,87 +310,60 @@
         "tags": [
           "users"
         ],
-        "operationId": "getExpiringUsers",
-        "summary": "Пользователи, у которых срок действия истекает через 3 дня",
-        "description": "Возвращает пользователей, чьи ключи истекают в течение ближайших трёх дней.",
+        "summary": "Expiring",
+        "description": "Return users whose subscription expires within the given number of days.",
+        "operationId": "listExpiringUsers",
         "parameters": [
           {
-            "name": "username",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "Telegram username пользователя"
-            }
-          },
-          {
-            "name": "active",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Фильтр по активным (true) или неактивным (false) записям"
-            }
-          },
-          {
-            "name": "limit",
+            "name": "days",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "description": "Ограничение количества возвращаемых записей"
+              "default": 1,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "x-admin-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Список пользователей с истекающими ключами.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UsersResponse"
+                  "type": "object",
+                  "title": "Response Expiring Users Expiring Get"
                 }
               }
             }
           },
-          "404": {
-            "description": "Нет пользователей с истекающими ключами.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт фильтров запроса.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/users/userinfo": {
@@ -689,244 +371,86 @@
         "tags": [
           "users"
         ],
+        "summary": "Get Userinfo",
+        "description": "Return aggregated VPN user information.",
         "operationId": "getUserInfo",
-        "summary": "Агрегированные данные пользователя",
-        "description": "Возвращает подробную информацию о конкретном пользователе, включая ключи и статусы.",
         "parameters": [
           {
             "name": "username",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
-              "description": "Telegram username пользователя"
-            }
-          },
-          {
-            "name": "active",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Фильтр по активным (true) или неактивным (false) записям"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "description": "Ограничение количества возвращаемых записей"
+              "title": "Username"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Информация о пользователе получена.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserInfoResponse"
-                },
-                "examples": {
-                  "success": {
-                    "value": {
-                      "ok": true,
-                      "user": {
-                        "username": "ai_leaddesigner",
-                        "uuid": "xxxx-xxxx",
-                        "link": "vless://...",
-                        "chat_id": 123456,
-                        "expires_at": "2025-11-11",
-                        "active": true,
-                        "user_id": "ai_leaddesigner"
-                      }
-                    }
-                  },
-                  "not_found": {
-                    "value": {
-                      "ok": false,
-                      "error": "user_not_found",
-                      "message": "Пользователь не найден."
-                    }
-                  }
+                  "type": "object",
+                  "title": "Response Get Userinfo Users Userinfo Get"
                 }
               }
             }
           },
-          "404": {
-            "description": "Пользователь не найден.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт фильтров запроса.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
-    "/notify/send": {
+    "/users/all": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List All Users",
+        "description": "Return all Telegram users stored in the local table.",
+        "operationId": "listTelegramUsers",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response List All Users Users All Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notify/notify/send": {
       "post": {
         "tags": [
           "notify"
         ],
-        "operationId": "sendNotification",
-        "summary": "Отправить сообщение одному пользователю",
-        "description": "Отправляет персональное уведомление пользователю.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotificationRequest"
-              }
-            }
-          }
-        },
+        "summary": "Send Message",
+        "description": "Отправка сообщения пользователю по username через сохранённый chat_id.",
+        "operationId": "notifyBroadcast",
         "responses": {
           "200": {
-            "description": "Уведомление отправлено.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActionResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Чат пользователя не найден.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт отправки уведомления.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
+                "schema": {}
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/notify/broadcast": {
-      "post": {
-        "tags": [
-          "notify"
-        ],
-        "operationId": "broadcastNotification",
-        "summary": "Массовая рассылка пользователям",
-        "description": "Отправляет массовое уведомление нескольким пользователям или всем активным пользователям.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BroadcastRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Рассылка выполнена.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActionResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Не удалось найти получателей.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт при формировании списка рассылки.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/admin/backup_db": {
@@ -934,824 +458,216 @@
         "tags": [
           "admin"
         ],
+        "summary": "Backup Db",
         "operationId": "backupDatabase",
-        "summary": "Резервное копирование базы",
-        "description": "Создаёт резервную копию базы данных VPN_GPT и возвращает результат операции.",
-        "responses": {
-          "200": {
-            "description": "Резервное копирование выполнено.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BackupResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Резервная копия не найдена или хранилище недоступно.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт при создании резервной копии.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/admin/stats": {
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "operationId": "getAdminStats",
-        "summary": "Получить статистику (активные/истёкшие ключи)",
-        "description": "Возвращает сводную статистику по активным и истёкшим ключам.",
         "parameters": [
           {
-            "name": "username",
-            "in": "query",
+            "name": "x-admin-token",
+            "in": "header",
             "required": false,
             "schema": {
-              "type": "string",
-              "description": "Telegram username пользователя"
-            }
-          },
-          {
-            "name": "active",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "description": "Фильтр по активным (true) или неактивным (false) записям"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "description": "Ограничение количества возвращаемых записей"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Статистика получена.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminStatsResponse"
-                }
+                "schema": {}
               }
             }
           },
-          "404": {
-            "description": "Статистика недоступна.",
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт параметров запроса.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/healthz": {
       "get": {
-        "tags": [
-          "health"
-        ],
-        "operationId": "checkHealth",
-        "summary": "Проверка доступности API",
-        "description": "Возвращает текущее состояние API и наличие связи со службами.",
+        "summary": "Healthz",
+        "description": "Simple health-check endpoint used for monitoring.",
+        "operationId": "healthz",
         "responses": {
           "200": {
-            "description": "API доступен.",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Служба проверки недоступна.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт состояния служб.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/status": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "operationId": "getSystemStatus",
-        "summary": "Сводная информация о состоянии служб",
-        "description": "Предоставляет агрегированную информацию о состоянии служб VPN_GPT.",
-        "responses": {
-          "200": {
-            "description": "Состояние служб получено.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SystemStatusResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Состояние служб недоступно.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Конфликт состояния служб.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Внутренняя ошибка сервера.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     }
   },
   "components": {
-    "securitySchemes": {
-      "AdminToken": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-admin-token"
-      }
-    },
-    "parameters": {
-      "UsernameParam": {
-        "name": "username",
-        "in": "query",
-        "required": false,
-        "schema": {
-          "type": "string",
-          "description": "Telegram username пользователя"
-        }
-      },
-      "ActiveParam": {
-        "name": "active",
-        "in": "query",
-        "required": false,
-        "schema": {
-          "type": "boolean",
-          "description": "Фильтр по активным (true) или неактивным (false) записям"
-        }
-      },
-      "LimitParam": {
-        "name": "limit",
-        "in": "query",
-        "required": false,
-        "schema": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 500,
-          "description": "Ограничение количества возвращаемых записей"
-        }
-      }
-    },
     "schemas": {
-      "IssueKeyRequest": {
-        "type": "object",
-        "additionalProperties": false,
+      "DisableKeyRequest": {
         "properties": {
-          "email": {
+          "uuid": {
             "type": "string",
-            "format": "email",
-            "description": "Email клиента, для которого требуется ключ"
+            "title": "Uuid"
           }
         },
-        "required": [
-          "email"
-        ]
-      },
-      "IssueKeyResponse": {
         "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "key": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "created": {
-            "type": "boolean",
-            "description": "Признак создания нового ключа"
-          }
-        },
         "required": [
-          "email",
-          "key",
-          "created"
-        ]
+          "uuid"
+        ],
+        "title": "DisableKeyRequest"
       },
-      "KeyResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "key": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "email",
-          "key"
-        ]
-      },
-      "BulkIssueReport": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "issued": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "skipped": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "issued",
-          "skipped"
-        ]
-      },
-      "ErrorDetail": {
-        "type": "object",
-        "additionalProperties": false,
+      "HTTPValidationError": {
         "properties": {
           "detail": {
-            "type": "string"
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
           }
         },
-        "required": [
-          "detail"
-        ]
-      },
-      "VpnRenewRequest": {
         "type": "object",
-        "additionalProperties": false,
+        "title": "HTTPValidationError"
+      },
+      "IssueKeyRequest": {
         "properties": {
           "username": {
             "type": "string",
-            "description": "Пользователь, чей ключ продлевается"
-          },
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "description": "UUID продлеваемого ключа"
+            "title": "Username",
+            "description": "Telegram username без @"
           },
           "days": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 30,
-            "description": "Количество дополнительных дней"
-          }
-        },
-        "anyOf": [
-          {
-            "required": [
-              "username"
-            ]
-          },
-          {
-            "required": [
-              "uuid"
-            ]
-          }
-        ]
-      },
-      "VpnDisableRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "username": {
-            "type": "string",
-            "description": "Пользователь, чей ключ отключается"
-          },
-          "uuid": {
-            "type": "string",
-            "format": "uuid",
-            "description": "UUID отключаемого ключа"
-          },
-          "reason": {
-            "type": "string",
-            "description": "Причина отключения"
-          }
-        },
-        "anyOf": [
-          {
-            "required": [
-              "username"
-            ]
-          },
-          {
-            "required": [
-              "uuid"
-            ]
-          }
-        ]
-      },
-      "NotificationRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "username": {
-            "type": "string",
-            "description": "Получатель уведомления"
-          },
-          "message": {
-            "type": "string",
-            "description": "Текст уведомления"
-          }
-        },
-        "required": [
-          "username",
-          "message"
-        ]
-      },
-      "BroadcastRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "usernames": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Список пользователей для рассылки"
-          },
-          "message": {
-            "type": "string",
-            "description": "Текст сообщения"
-          },
-          "activeOnly": {
-            "type": "boolean",
-            "default": true,
-            "description": "Ограничить рассылку только активными пользователями"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "oneOf": [
-          {
-            "required": [
-              "usernames"
-            ]
-          },
-          {
-            "required": [
-              "activeOnly"
-            ]
-          }
-        ]
-      },
-      "VpnKeyResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "uuid": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "link": {
-            "type": "string",
-            "format": "uri",
-            "description": "Ссылка для подключения"
-          },
-          "expires": {
-            "type": "string",
-            "format": "date",
-            "description": "Дата истечения ключа"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok",
-          "uuid",
-          "link",
-          "expires",
-          "message"
-        ]
-      },
-      "ActionResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok"
-        ]
-      },
-      "ActiveKeysResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "keys": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VpnKeyInfo"
-            }
-          },
-          "total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "ok",
-          "keys"
-        ]
-      },
-      "UsersResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UserInfo"
-            }
-          },
-          "total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "ok",
-          "users"
-        ]
-      },
-      "UserInfoResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "user": {
-            "oneOf": [
+            "anyOf": [
               {
-                "$ref": "#/components/schemas/UserInfo"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
+            ],
+            "title": "Days",
+            "description": "Количество дней действия ключа",
+            "default": 3
           }
         },
-        "required": [
-          "ok"
-        ]
-      },
-      "BackupResponse": {
         "type": "object",
-        "additionalProperties": false,
+        "required": [
+          "username"
+        ],
+        "title": "IssueKeyRequest"
+      },
+      "IssueKeyResponse": {
         "properties": {
           "ok": {
-            "type": "boolean"
-          },
-          "backup_id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "location": {
-            "type": "string",
-            "format": "uri"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok",
-          "backup_id",
-          "created_at"
-        ]
-      },
-      "AdminStatsResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "active_keys": {
-            "type": "integer"
-          },
-          "expired_keys": {
-            "type": "integer"
-          },
-          "users_total": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "ok",
-          "active_keys",
-          "expired_keys",
-          "users_total"
-        ]
-      },
-      "HealthResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "service": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok",
-          "service"
-        ]
-      },
-      "SystemStatusResponse": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "xray_status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "degraded",
-              "offline"
-            ]
-          },
-          "bot_status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "degraded",
-              "offline"
-            ]
-          },
-          "vpn_keys": {
-            "type": "integer"
-          },
-          "expiring": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "ok",
-          "xray_status",
-          "bot_status",
-          "vpn_keys",
-          "expiring"
-        ]
-      },
-      "VpnKeyInfo": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "uuid": {
-            "type": "string",
-            "format": "uuid"
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
           },
           "username": {
-            "type": "string"
-          },
-          "expires_at": {
             "type": "string",
-            "format": "date"
-          },
-          "active": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "uuid",
-          "username",
-          "expires_at",
-          "active"
-        ]
-      },
-      "UserInfo": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "username": {
-            "type": "string"
+            "title": "Username"
           },
           "uuid": {
             "type": "string",
-            "format": "uuid"
+            "title": "Uuid"
           },
           "link": {
             "type": "string",
-            "format": "uri"
-          },
-          "chat_id": {
-            "type": "integer"
+            "title": "Link"
           },
           "expires_at": {
             "type": "string",
-            "format": "date"
-          },
-          "active": {
-            "type": "boolean"
-          },
-          "user_id": {
-            "type": "string"
+            "title": "Expires At"
           }
         },
+        "type": "object",
         "required": [
           "username",
           "uuid",
-          "expires_at",
-          "active"
-        ]
+          "link",
+          "expires_at"
+        ],
+        "title": "IssueKeyResponse"
       },
-      "ErrorResponse": {
-        "type": "object",
-        "additionalProperties": false,
+      "RenewKeyRequest": {
         "properties": {
-          "ok": {
-            "type": "boolean"
+          "username": {
+            "type": "string",
+            "title": "Username"
           },
-          "error": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
+          "days": {
+            "type": "integer",
+            "title": "Days",
+            "default": 30
           }
         },
+        "type": "object",
         "required": [
-          "ok",
-          "error"
-        ]
+          "username"
+        ],
+        "title": "RenewKeyRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     }
   },
-  "security": [
+  "servers": [
     {
-      "AdminToken": []
+      "url": "https://vpn-gpt.store/api"
     }
   ]
 }

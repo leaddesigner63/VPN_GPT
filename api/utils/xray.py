@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-
-
-
 import json
 import os
 import subprocess
@@ -15,6 +12,14 @@ XRAY_CONFIG = Path(os.getenv("XRAY_CONFIG", "/usr/local/etc/xray/config.json"))
 XRAY_SERVICE = os.getenv("XRAY_SERVICE", "xray")
 
 logger = get_logger("xray")
+
+
+class XrayError(RuntimeError):
+    """Base exception for Xray related errors."""
+
+
+class XrayRestartError(XrayError):
+    """Raised when the Xray service failed to restart."""
 
 
 def _load() -> dict:
@@ -33,52 +38,74 @@ def _save(cfg: dict) -> None:
 
 def _restart() -> None:
     logger.info("Restarting Xray service '%s'", XRAY_SERVICE)
-    subprocess.run(["systemctl", "restart", XRAY_SERVICE], check=True)
+    try:
+        subprocess.run(["systemctl", "restart", XRAY_SERVICE], check=True)
+    except subprocess.CalledProcessError as exc:
+        logger.exception("Failed to restart Xray service", extra={"service": XRAY_SERVICE})
+        raise XrayRestartError("xray_restart_failed") from exc
 
 
-def add_client(email: str, client_id: str | None = None) -> dict:
-    cfg = _load()
-    inb = cfg.get("inbounds", [])[0]
-    clients = inb.setdefault("settings", {}).setdefault("clients", [])
+def _get_vless_inbound(cfg: dict) -> dict:
+    for inbound in cfg.get("inbounds", []):
+        if inbound.get("protocol") == "vless":
+            return inbound
+    logger.error("VLESS inbound not found in Xray configuration")
+    raise XrayError("vless_inbound_not_found")
 
-    # Deduplicate any existing entries that accidentally share the same client id.
+
+def _deduplicate_clients(clients: list[dict]) -> list[dict]:
     deduped: list[dict] = []
-    seen_ids: set[str] = set()
+    seen: set[str] = set()
     for client in clients:
         cid = client.get("id")
-        if cid and cid in seen_ids:
+        if cid and cid in seen:
             logger.warning("Removed duplicate client id from Xray config", extra={"client_id": cid})
             continue
         if cid:
-            seen_ids.add(cid)
+            seen.add(cid)
         deduped.append(client)
-
-    if len(deduped) != len(clients):
-        inb["settings"]["clients"] = clients = deduped
-
-    new_uuid = client_id or str(uuid4())
-    if new_uuid in seen_ids:
-        logger.error("Attempted to add duplicate client id", extra={"client_id": new_uuid, "email": email})
-        raise ValueError(f"Client id {new_uuid} already exists")
-
-    clients.append({"id": new_uuid, "level": 0, "email": email})
-    _save(cfg)
-    _restart()
-    logger.info("Added new Xray client", extra={"email": email, "uuid": new_uuid})
-    return {"uuid": new_uuid}
+    return deduped
 
 
-def remove_client(uuid: str) -> bool:
+def add_client(email: str, client_id: str | None = None) -> dict:
+    """Backward compatible helper kept for legacy callers."""
+
+    uuid_value = client_id or str(uuid4())
+    add_client_no_duplicates(uuid_value, email)
+    return {"uuid": uuid_value}
+
+
+def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
     cfg = _load()
-    inb = cfg.get("inbounds", [])[0]
-    clients = inb.setdefault("settings", {}).setdefault("clients", [])
-    before = len(clients)
-    inb["settings"]["clients"] = [c for c in clients if c.get("id") != uuid]
+    inbound = _get_vless_inbound(cfg)
+    settings = inbound.setdefault("settings", {})
+    clients = settings.setdefault("clients", [])
+
+    clients[:] = _deduplicate_clients(clients)
+    for client in clients:
+        if client.get("id") == uuid_value:
+            logger.info("Client already present in Xray config", extra={"uuid": uuid_value})
+            return False
+
+    clients.append({"id": uuid_value, "level": 0, "email": email})
     _save(cfg)
     _restart()
-    removed = len(inb["settings"]["clients"]) < before
+    logger.info("Added Xray client", extra={"uuid": uuid_value, "email": email})
+    return True
+
+
+def remove_client(uuid_value: str) -> bool:
+    cfg = _load()
+    inbound = _get_vless_inbound(cfg)
+    settings = inbound.setdefault("settings", {})
+    clients = settings.setdefault("clients", [])
+    before = len(clients)
+    settings["clients"] = [client for client in clients if client.get("id") != uuid_value]
+    _save(cfg)
+    _restart()
+    removed = len(settings["clients"]) < before
     if removed:
-        logger.info("Removed Xray client %s", uuid)
+        logger.info("Removed Xray client", extra={"uuid": uuid_value})
     else:
-        logger.warning("Attempted to remove unknown Xray client %s", uuid)
+        logger.warning("Attempted to remove unknown Xray client", extra={"uuid": uuid_value})
     return removed
