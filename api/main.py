@@ -58,22 +58,27 @@ SECONDARY_API_PREFIX = _normalise_prefix(os.getenv("API_PREFIX", "/api"))
 
 
 def _register_router(router: APIRouter, *, prefix: str | None = None, **kwargs: Any) -> None:
-    """Register a router on the default path and optionally with an extra prefix.
+    """Register ``router`` on the base path and (optionally) under ``API_PREFIX``.
 
-    Historically the project exposed endpoints on paths such as ``/vpn``.
-    Deployments, however, proxy the application under ``/api`` which resulted in
-    404 responses when the proxy forwarded requests like ``/api/vpn/issue_key``.
-    To preserve backwards compatibility we expose both variants by default and
-    allow disabling the secondary prefix via ``API_PREFIX``.
+    The production deployment serves the application behind a reverse proxy that
+    forwards requests prefixed with ``/api``.  Historically our routes were
+    mounted directly on paths such as ``/vpn`` which meant proxied requests like
+    ``/api/vpn/issue_key`` returned a 404.  To maintain backwards compatibility
+    we now mount every router twice: once on its original prefix and again with
+    the additional API prefix.  Duplicate prefixes are ignored to avoid
+    registering the same router twice under the same path.
     """
 
     primary_prefix = _normalise_prefix(prefix)
-    app.include_router(router, prefix=primary_prefix, **kwargs)
+    prefixes = {primary_prefix}
 
     if SECONDARY_API_PREFIX:
         combined_prefix = _compose_prefix(SECONDARY_API_PREFIX, primary_prefix)
-        if combined_prefix != primary_prefix:
-            app.include_router(router, prefix=combined_prefix, **kwargs)
+        if combined_prefix not in prefixes:
+            prefixes.add(combined_prefix)
+
+    for resolved_prefix in prefixes:
+        app.include_router(router, prefix=resolved_prefix, **kwargs)
 
 # === Routers ===
 from api.endpoints import admin, notify, status, users, vpn  # noqa: E402
