@@ -1,57 +1,151 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "VPN_GPT Action API",
-    "description": "API for GPT Actions — manage VPN keys, users, and notifications",
-    "version": "1.0.0"
+    "title": "VPN_GPT Unified API",
+    "version": "2.1.0",
+    "description": "Полный набор API-методов VPN_GPT, синхронизированный с реальным кодом FastAPI"
   },
+  "servers": [
+    {
+      "url": "https://vpn-gpt.store/api"
+    }
+  ],
   "paths": {
     "/vpn/issue_key": {
       "post": {
         "tags": [
           "vpn"
         ],
-        "summary": "Выдать VPN-ключ",
-        "description": "Выдаёт VPN-ключ бесплатно (временный демо-режим)",
+        "summary": "Выдаёт VPN-ключ",
+        "description": "Создаёт новый VPN-ключ и возвращает ссылку подключения.",
         "operationId": "vpnPostIssueKey",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssueVpnKeyResponse"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "username"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Имя пользователя, для которого создаётся ключ."
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 30,
+                    "description": "Количество дней действия ключа."
+                  }
                 },
-                "example": {
-                  "ok": true,
-                  "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123",
-                  "link": "vless://...",
-                  "expires": "2024-12-31",
-                  "message": "Ключ создан успешно."
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "additionalProperties": false
+              },
+              "example": {
+                "username": "demo_user",
+                "days": 30
               }
             }
           }
         },
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "username": "demo_user",
-                "days": 30
-              },
-              "schema": {
-                "$ref": "#/components/schemas/IssueVpnKeyRequest"
+        "responses": {
+          "200": {
+            "description": "Ключ успешно создан.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Ответ с данными нового VPN-ключа.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "link": {
+                      "type": "string",
+                      "description": "Сформированная VLESS-ссылка для подключения."
+                    },
+                    "uuid": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Уникальный идентификатор ключа."
+                    },
+                    "expires": {
+                      "type": "string",
+                      "format": "date",
+                      "description": "Дата истечения срока действия ключа."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Сообщение для пользователя."
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "link",
+                    "uuid",
+                    "expires",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные входные данные.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "У пользователя уже есть активный ключ.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
               }
             }
           }
@@ -68,36 +162,151 @@
         "tags": [
           "vpn"
         ],
-        "summary": "Renew Vpn Key",
+        "summary": "Продлевает VPN-ключ",
+        "description": "Продлевает срок действия существующего VPN-ключа пользователя.",
         "operationId": "vpnPostRenewKey",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RenewVpnKeyResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RenewVpnKeyRequest"
+                "type": "object",
+                "required": [
+                  "username"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Имя пользователя с действующим ключом."
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 30,
+                    "description": "Дополнительное количество дней."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "username": "demo_user",
+                "days": 14
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Срок действия ключа обновлён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Ответ при продлении VPN-ключа.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "username": {
+                      "type": "string"
+                    },
+                    "expires": {
+                      "type": "string",
+                      "format": "date"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "username",
+                    "expires"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректные входные данные.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Активный ключ не найден.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Не удалось обновить срок действия ключа.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
               }
             }
           }
@@ -114,42 +323,113 @@
         "tags": [
           "vpn"
         ],
-        "summary": "Disable Vpn Key",
+        "summary": "Деактивирует ключ",
+        "description": "Переводит VPN-ключ в статус неактивного и удаляет клиента из Xray.",
         "operationId": "vpnPostDisableKey",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DisableVpnKeyResponse"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "uuid"
+                ],
+                "properties": {
+                  "uuid": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "UUID ключа, который требуется отключить."
+                  }
                 },
-                "example": {
-                  "ok": true,
-                  "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "additionalProperties": false
+              },
+              "example": {
+                "uuid": "9ad5d1a9-1f6a-4f7b-9f3c-45ab2a0a6c92"
               }
             }
           }
         },
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "uuid": "0b5c3fce-8c1c-4ed7-8aa7-7f5c6ec0e123"
-              },
-              "schema": {
-                "$ref": "#/components/schemas/DisableVpnKeyRequest"
+        "responses": {
+          "200": {
+            "description": "Ключ успешно отключён.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Ответ при деактивации ключа.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "uuid": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "uuid"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Не указан UUID ключа.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ключ не найден.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
               }
             }
           }
@@ -163,19 +443,24 @@
     },
     "/vpn/active": {
       "get": {
-        "operationId": "listActiveKeys",
-        "summary": "Получить список активных VPN-ключей",
-        "description": "Возвращает все активные VPN-ключи с датами истечения.",
+        "tags": [
+          "vpn"
+        ],
+        "summary": "Возвращает список активных ключей",
+        "description": "Предоставляет перечень всех активных VPN-ключей.",
+        "operationId": "vpnGetActive",
         "responses": {
           "200": {
-            "description": "Список активных ключей",
+            "description": "Список активных ключей получен.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "description": "Список активных VPN-ключей.",
                   "properties": {
                     "ok": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "const": true
                     },
                     "active": {
                       "type": "array",
@@ -186,25 +471,37 @@
                             "type": "string"
                           },
                           "uuid": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid"
                           },
                           "link": {
                             "type": "string"
                           },
                           "issued_at": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "date"
                           },
                           "expires_at": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "date"
                           }
-                        }
+                        },
+                        "required": [
+                          "username",
+                          "uuid",
+                          "link",
+                          "issued_at",
+                          "expires_at"
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
                   "required": [
                     "ok",
                     "active"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -217,76 +514,174 @@
         "tags": [
           "users"
         ],
-        "summary": "List Users",
-        "description": "Return VPN users from the shared SQLite database.",
-        "operationId": "usersGet",
+        "summary": "Возвращает всех пользователей",
+        "description": "Список пользователей VPN из таблицы vpn_keys с возможностью фильтрации.",
+        "operationId": "usersGetList",
         "parameters": [
           {
             "name": "username",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
+              "type": "string"
+            },
+            "description": "Фильтр по имени пользователя."
           },
           {
             "name": "active",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Active"
-            }
+              "type": "boolean"
+            },
+            "description": "Фильтр по признаку активности ключа."
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Ограничение количества возвращаемых записей."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Пользователи успешно получены.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnUserCollectionResponse"
+                  "type": "object",
+                  "description": "Список пользователей VPN.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Запись о VPN-ключе в базе данных.",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "user_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "username": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "uuid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "issued_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "expires_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "active": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "users",
+                    "total"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "404": {
+            "description": "Пользователи не найдены.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Неверно указан параметр limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -304,8 +699,8 @@
         "tags": [
           "users"
         ],
-        "summary": "Expiring",
-        "description": "Return users whose subscription expires within the given number of days.",
+        "summary": "Возвращает пользователей с истекающим сроком",
+        "description": "Показывает пользователей, у которых срок действия VPN-ключа истекает в ближайшие дни.",
         "operationId": "usersGetExpiring",
         "parameters": [
           {
@@ -314,76 +709,175 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 3,
-              "title": "Days"
-            }
+              "minimum": 0,
+              "default": 3
+            },
+            "description": "Количество дней до истечения срока."
           },
           {
             "name": "username",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
+              "type": "string"
+            },
+            "description": "Фильтр по имени пользователя."
           },
           {
             "name": "active",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Active"
-            }
+              "type": "boolean"
+            },
+            "description": "Фильтр по активности ключа."
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Ограничение количества записей."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Список пользователей с истекающими ключами получен.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnUserCollectionResponse"
+                  "type": "object",
+                  "description": "Список пользователей VPN.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Запись о VPN-ключе в базе данных.",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "user_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "username": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "uuid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "issued_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "expires_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "active": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "users",
+                    "total"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "404": {
+            "description": "Подходящие пользователи не найдены.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Неверно указаны параметры фильтрации.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -401,44 +895,148 @@
         "tags": [
           "users"
         ],
-        "summary": "Get Userinfo",
-        "description": "Return aggregated VPN user information.",
+        "summary": "Возвращает объединённые данные пользователя",
+        "description": "Агрегированные данные по VPN, истории и Telegram-чату для выбранного пользователя.",
         "operationId": "usersGetUserinfo",
         "parameters": [
           {
             "name": "username",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
+              "type": "string"
+            },
+            "description": "Имя пользователя для поиска."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Объединённые данные пользователя получены.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VpnUserinfoResponse"
+                  "type": "object",
+                  "description": "Агрегированные данные по пользователю.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "username": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "uuid": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expires_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "link": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "chat_id": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "user_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "issued_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "active": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "user"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "404": {
+            "description": "Пользователь не найден.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Не указан username пользователя.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -456,16 +1054,53 @@
         "tags": [
           "users"
         ],
-        "summary": "List All Users",
-        "description": "Return all Telegram users stored in the local table.",
+        "summary": "Возвращает всех с chat_id",
+        "description": "Выводит всех Telegram-пользователей из локальной таблицы tg_users.",
         "operationId": "usersGetAll",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Список Telegram-пользователей получен.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TelegramUsersResponse"
+                  "type": "object",
+                  "description": "Список Telegram-пользователей.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "chat_id": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "username",
+                          "chat_id"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "users"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -478,37 +1113,173 @@
         "tags": [
           "notify"
         ],
-        "summary": "Send Message",
-        "description": "Отправить личное уведомление конкретному пользователю.",
+        "summary": "Отправить сообщение пользователю",
+        "description": "Отправляет личное уведомление пользователю в Telegram.",
         "operationId": "notifyPostSend",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SimpleMessageResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NotifySendRequest"
+                "type": "object",
+                "required": [
+                  "username",
+                  "text"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Имя пользователя в Telegram."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Текст уведомления."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "username": "demo_user",
+                "text": "Ваш ключ продлён до 2024-12-31."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Уведомление отправлено.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Результат отправки личного уведомления.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Не указаны необходимые поля.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Не удалось найти chat_id пользователя.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Telegram вернул ошибку при отправке сообщения.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка взаимодействия с Telegram API.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
               }
             }
           }
@@ -525,37 +1296,111 @@
         "tags": [
           "notify"
         ],
-        "summary": "Notify Broadcast",
-        "description": "Массовая рассылка сообщений всем пользователям из tg_users.",
+        "summary": "Массовая рассылка",
+        "description": "Отправляет сообщение всем пользователям из таблицы tg_users.",
         "operationId": "notifyPostBroadcast",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SimpleMessageResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NotifyBroadcastRequest"
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "Текст сообщения для массовой рассылки."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "text": "Сегодня плановые технические работы в 23:00."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Рассылка выполнена.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Результат массовой рассылки.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Пустой текст сообщения.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "BOT_TOKEN не настроен или произошла ошибка при отправке.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
               }
             }
           }
@@ -572,25 +1417,45 @@
         "tags": [
           "admin"
         ],
-        "summary": "Backup Db",
+        "summary": "Резервное копирование БД",
+        "description": "Создаёт резервную копию базы данных и возвращает информацию о файле.",
         "operationId": "adminPostBackupDb",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Резервная копия создана.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupDatabaseResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "description": "Информация о резервной копии базы данных.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "backup_id": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "location": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "backup_id",
+                    "created_at",
+                    "location",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -608,7 +1473,8 @@
         "tags": [
           "admin"
         ],
-        "summary": "Get Stats",
+        "summary": "Статистика по пользователям и ключам",
+        "description": "Возвращает агрегированные показатели по активным и просроченным ключам.",
         "operationId": "adminGetStats",
         "parameters": [
           {
@@ -616,67 +1482,120 @@
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Username"
-            }
+              "type": "string"
+            },
+            "description": "Фильтр по имени пользователя."
           },
           {
             "name": "active",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Active"
-            }
+              "type": "boolean"
+            },
+            "description": "Фильтр по признаку активности ключей."
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Ограничение количества записей при вычислении статистики."
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Статистика успешно вычислена.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminStatsResponse"
+                  "type": "object",
+                  "description": "Статистика по пользователям и ключам.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "active_keys": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "expired_keys": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "users_total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "active_keys",
+                    "expired_keys",
+                    "users_total"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "404": {
+            "description": "Статистика недоступна для выбранных параметров.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Неверно указан параметр limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Стандартный ответ об ошибке.",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": false
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -686,119 +1605,15 @@
           {
             "AdminTokenAuth": []
           }
-        ]
-      }
-    },
-    "/status": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "System Status",
-        "description": "Return a high-level summary of system state.",
-        "operationId": "healthGetStatus",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SystemStatusResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "AdminTokenAuth": []
-          }
-        ]
-      }
-    },
-    "/healthz": {
-      "get": {
-        "summary": "Healthz",
-        "description": "Simple health-check endpoint used for monitoring.",
-        "operationId": "healthGetHealthz",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthcheckResponse"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "health"
         ]
       }
     }
   },
   "components": {
     "schemas": {
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          }
-        },
-        "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError"
-      },
       "ErrorResponse": {
         "type": "object",
+        "description": "Стандартный ответ об ошибке.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -815,78 +1630,47 @@
           "ok",
           "error"
         ],
-        "additionalProperties": false,
-        "description": "Стандартный ответ об ошибке."
+        "additionalProperties": false
       },
-      "IssueVpnKeyRequest": {
+      "VpnIssueKeyResponse": {
         "type": "object",
-        "properties": {
-          "username": {
-            "type": "string",
-            "minLength": 1
-          },
-          "days": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "username"
-        ],
-        "additionalProperties": false,
-        "description": "Параметры для выдачи нового VPN-ключа."
-      },
-      "IssueVpnKeyResponse": {
-        "type": "object",
+        "description": "Ответ с данными нового VPN-ключа.",
         "properties": {
           "ok": {
             "type": "boolean",
             "const": true
           },
           "link": {
-            "type": "string"
+            "type": "string",
+            "description": "Сформированная VLESS-ссылка для подключения."
           },
           "uuid": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Уникальный идентификатор ключа."
           },
           "expires": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "description": "Дата истечения срока действия ключа."
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Сообщение для пользователя."
           }
         },
         "required": [
           "ok",
           "link",
           "uuid",
-          "expires"
+          "expires",
+          "message"
         ],
-        "additionalProperties": false,
-        "description": "Успешный ответ при создании VPN-ключа."
+        "additionalProperties": false
       },
-      "RenewVpnKeyRequest": {
+      "VpnRenewKeyResponse": {
         "type": "object",
-        "properties": {
-          "username": {
-            "type": "string",
-            "minLength": 1
-          },
-          "days": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "username"
-        ],
-        "additionalProperties": false,
-        "description": "Параметры продления действия VPN-ключа."
-      },
-      "RenewVpnKeyResponse": {
-        "type": "object",
+        "description": "Ответ при продлении VPN-ключа.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -905,25 +1689,11 @@
           "username",
           "expires"
         ],
-        "additionalProperties": false,
-        "description": "Успешный ответ продления VPN-ключа."
+        "additionalProperties": false
       },
-      "DisableVpnKeyRequest": {
+      "VpnDisableKeyResponse": {
         "type": "object",
-        "properties": {
-          "uuid": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "uuid"
-        ],
-        "additionalProperties": false,
-        "description": "Параметры отключения VPN-ключа."
-      },
-      "DisableVpnKeyResponse": {
-        "type": "object",
+        "description": "Ответ при деактивации ключа.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -938,27 +1708,81 @@
           "ok",
           "uuid"
         ],
-        "additionalProperties": false,
-        "description": "Подтверждение успешного отключения VPN-ключа."
+        "additionalProperties": false
       },
-      "VpnKey": {
+      "VpnActiveKeysResponse": {
         "type": "object",
+        "description": "Список активных VPN-ключей.",
         "properties": {
-          "uuid": {
-            "type": "string"
+          "ok": {
+            "type": "boolean",
+            "const": true
           },
-          "username": {
-            "type": "string"
+          "active": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "username": {
+                  "type": "string"
+                },
+                "uuid": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "link": {
+                  "type": "string"
+                },
+                "issued_at": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "expires_at": {
+                  "type": "string",
+                  "format": "date"
+                }
+              },
+              "required": [
+                "username",
+                "uuid",
+                "link",
+                "issued_at",
+                "expires_at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "VpnKeyRecord": {
+        "type": "object",
+        "description": "Запись о VPN-ключе в базе данных.",
+        "properties": {
+          "id": {
+            "type": "integer"
           },
-          "expires_at": {
+          "user_id": {
             "type": [
               "string",
               "null"
-            ],
-            "format": "date"
+            ]
           },
-          "active": {
-            "type": "boolean"
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uuid": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "link": {
             "type": [
@@ -970,65 +1794,25 @@
             "type": [
               "string",
               "null"
-            ],
-            "format": "date"
+            ]
           },
-          "user_id": {
+          "expires_at": {
             "type": [
               "string",
               "null"
             ]
           },
-          "chat_id": {
-            "type": [
-              "integer",
-              "string",
-              "null"
-            ]
-          },
-          "id": {
+          "active": {
             "type": [
               "integer",
               "null"
             ]
           }
-        },
-        "required": [
-          "uuid",
-          "username",
-          "active"
-        ],
-        "additionalProperties": true,
-        "description": "Информация о VPN-ключе из базы данных."
+        }
       },
-      "VpnKeyCollectionResponse": {
+      "UsersCollectionResponse": {
         "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          },
-          "keys": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VpnKey"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "ok",
-          "keys",
-          "total"
-        ],
-        "additionalProperties": false,
-        "description": "Список VPN-ключей, удовлетворяющих фильтрам."
-      },
-      "VpnUserCollectionResponse": {
-        "type": "object",
+        "description": "Список пользователей VPN.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -1037,7 +1821,55 @@
           "users": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/VpnKey"
+              "type": "object",
+              "description": "Запись о VPN-ключе в базе данных.",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "user_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "uuid": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "link": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "issued_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "expires_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "active": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
             }
           },
           "total": {
@@ -1050,29 +1882,79 @@
           "users",
           "total"
         ],
-        "additionalProperties": false,
-        "description": "Коллекция пользователей VPN из таблицы vpn_keys."
+        "additionalProperties": false
       },
-      "VpnUserinfoResponse": {
+      "UserinfoResponse": {
         "type": "object",
+        "description": "Агрегированные данные по пользователю.",
         "properties": {
           "ok": {
             "type": "boolean",
             "const": true
           },
           "user": {
-            "$ref": "#/components/schemas/VpnKey"
+            "type": "object",
+            "properties": {
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "uuid": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "link": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "chat_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "user_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "issued_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "active": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
           }
         },
         "required": [
           "ok",
           "user"
         ],
-        "additionalProperties": false,
-        "description": "Расширенная информация по одному пользователю VPN."
+        "additionalProperties": false
       },
       "TelegramUsersResponse": {
         "type": "object",
+        "description": "Список Telegram-пользователей.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -1092,7 +1974,6 @@
                 "chat_id": {
                   "type": [
                     "integer",
-                    "string",
                     "null"
                   ]
                 }
@@ -1109,44 +1990,11 @@
           "ok",
           "users"
         ],
-        "additionalProperties": false,
-        "description": "Список Telegram-пользователей из локальной таблицы."
+        "additionalProperties": false
       },
-      "NotifySendRequest": {
+      "NotifySendResponse": {
         "type": "object",
-        "properties": {
-          "username": {
-            "type": "string",
-            "minLength": 1
-          },
-          "text": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "username",
-          "text"
-        ],
-        "additionalProperties": false,
-        "description": "Параметры персонального уведомления Telegram."
-      },
-      "NotifyBroadcastRequest": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "text"
-        ],
-        "additionalProperties": false,
-        "description": "Текст массовой рассылки Telegram."
-      },
-      "SimpleMessageResponse": {
-        "type": "object",
+        "description": "Результат отправки личного уведомления.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -1160,11 +2008,29 @@
           "ok",
           "message"
         ],
-        "additionalProperties": false,
-        "description": "Успешное подтверждение с текстом сообщения."
+        "additionalProperties": false
       },
-      "BackupDatabaseResponse": {
+      "NotifyBroadcastResponse": {
         "type": "object",
+        "description": "Результат массовой рассылки.",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "AdminBackupResponse": {
+        "type": "object",
+        "description": "Информация о резервной копии базы данных.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -1189,13 +2055,14 @@
           "ok",
           "backup_id",
           "created_at",
-          "location"
+          "location",
+          "message"
         ],
-        "additionalProperties": false,
-        "description": "Информация о сохранённой резервной копии."
+        "additionalProperties": false
       },
       "AdminStatsResponse": {
         "type": "object",
+        "description": "Статистика по пользователям и ключам.",
         "properties": {
           "ok": {
             "type": "boolean",
@@ -1220,66 +2087,7 @@
           "expired_keys",
           "users_total"
         ],
-        "additionalProperties": false,
-        "description": "Агрегированная статистика по пользователям VPN."
-      },
-      "SystemStatusResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          },
-          "xray_status": {
-            "type": "string"
-          },
-          "bot_status": {
-            "type": "string"
-          },
-          "vpn_keys": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "expiring": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "ok",
-          "xray_status",
-          "bot_status",
-          "vpn_keys",
-          "expiring"
-        ],
-        "additionalProperties": false,
-        "description": "Сводка состояния сервисов и пользователей."
-      },
-      "HealthcheckResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          },
-          "service": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok",
-          "service",
-          "timestamp"
-        ],
-        "additionalProperties": false,
-        "description": "Простой ответ проверки работоспособности."
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -1290,10 +2098,5 @@
         "description": "Административный токен, который необходимо передавать в заголовке x-admin-token"
       }
     }
-  },
-  "servers": [
-    {
-      "url": "https://vpn-gpt.store"
-    }
-  ]
+  }
 }
