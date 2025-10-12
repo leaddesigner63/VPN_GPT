@@ -93,7 +93,7 @@ def _store_vpn_key(
     link: str,
     issued_at: dt.datetime,
     expires_at: dt.datetime,
-) -> None:
+) -> int:
     existing = conn.execute(
         "SELECT id FROM vpn_keys WHERE username=? LIMIT 1",
         (username,),
@@ -106,19 +106,21 @@ def _store_vpn_key(
         conn.execute(
             """
             UPDATE vpn_keys
-            SET uuid=?, link=?, issued_at=?, expires_at=?, active=1
+            SET uuid=?, link=?, issued_at=?, expires_at=?, active=0
             WHERE id=?
             """,
             (uuid_value, link, issued_str, expires_str, existing["id"]),
         )
+        return existing["id"]
     else:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO vpn_keys (username, uuid, link, issued_at, expires_at, active)
-            VALUES (?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, 0)
             """,
             (username, uuid_value, link, issued_str, expires_str),
         )
+        return cursor.lastrowid
 
 
 def _parse_date(value: str) -> dt.datetime:
@@ -171,7 +173,7 @@ def issue_vpn_key(payload: IssueKeyRequest) -> IssueKeyResponse:
     link = build_vless_link(uuid_value, username)
 
     with connect(autocommit=False) as conn:
-        _store_vpn_key(
+        record_id = _store_vpn_key(
             conn,
             username=username,
             uuid_value=uuid_value,
@@ -195,6 +197,7 @@ def issue_vpn_key(payload: IssueKeyRequest) -> IssueKeyResponse:
             )
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="failed_to_sync_xray")
 
+        conn.execute("UPDATE vpn_keys SET active=1 WHERE id=?", (record_id,))
         conn.commit()
 
     logger.info(

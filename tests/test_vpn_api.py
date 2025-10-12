@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
 import sys
+import types
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest
+import sqlite3
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -36,6 +40,7 @@ class Recorder:
 
 def _write_env(tmp_path: Path) -> None:
     env_path = Path("/root/VPN_GPT/.env")
+    env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text("VLESS_HOST=example.com\nVLESS_PORT=443\n", encoding="utf-8")
 
 
@@ -152,6 +157,86 @@ def test_issue_key_updates_existing_user(test_app):
     assert record["uuid"] == second_uuid
 
 
+def test_issue_key_activation_sequence(test_app, monkeypatch):
+    client, db_module, add_recorder, _ = test_app
+
+    import api.endpoints.vpn as vpn_module
+
+    recorded_sql: list[tuple[str, tuple]] = []
+
+    class RecordingConnection:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        def execute(self, sql, params=()):
+            normalized = " ".join(sql.split())
+            recorded_sql.append((normalized, params))
+            return self._wrapped.execute(sql, params)
+
+        def __getattr__(self, item):
+            return getattr(self._wrapped, item)
+
+    original_connect = vpn_module.connect
+
+    @contextmanager
+    def recording_connect(*, autocommit: bool = True):
+        with original_connect(autocommit=autocommit) as real_conn:
+            yield RecordingConnection(real_conn)
+
+    monkeypatch.setattr(vpn_module, "connect", recording_connect)
+
+    def ensure_inactive_before_activation(uuid_value, username):
+        normalized = [sql for sql, _ in recorded_sql]
+        inserts = [stmt for stmt in normalized if stmt.startswith("INSERT INTO vpn_keys")]
+        assert inserts, "VPN key insert was not recorded"
+        assert any(stmt.endswith("active) VALUES (?, ?, ?, ?, ?, 0)") for stmt in inserts)
+        assert not any("UPDATE vpn_keys SET active=1" in stmt for stmt in normalized)
+
+    add_recorder.side_effect = ensure_inactive_before_activation
+
+    response = client.post(
+        "/vpn/issue_key",
+        json={"username": "gloria"},
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+
+    normalized = [sql for sql, _ in recorded_sql]
+    insert_index = next(i for i, stmt in enumerate(normalized) if stmt.startswith("INSERT INTO vpn_keys"))
+    update_index = next(i for i, stmt in enumerate(normalized) if stmt.startswith("UPDATE vpn_keys SET active=1"))
+    assert update_index > insert_index
+
+    record = _fetch_record(db_module, "gloria")
+    assert record is not None
+    assert record["active"] == 1
+
+
+def test_issue_key_rolls_back_on_xray_failure(test_app):
+    client, db_module, add_recorder, _ = test_app
+
+    import api.endpoints.vpn as vpn_module
+
+    def fail_sync(uuid_value, username):
+        raise vpn_module.xray.XrayRestartError("boom")
+
+    add_recorder.side_effect = fail_sync
+
+    response = client.post(
+        "/vpn/issue_key",
+        json={"username": "henry"},
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"] == "xray_restart_failed"
+
+    record = _fetch_record(db_module, "henry")
+    assert record is None
+
+
 def test_renew_key_extends_expiry(test_app):
     client, _, _, _ = test_app
 
@@ -198,6 +283,32 @@ def test_disable_key_deactivates_record(test_app):
     assert record["active"] == 0
 
 
+def test_save_vpn_key_starts_inactive(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+
+    import utils.db as legacy_db
+    from importlib import reload
+
+    legacy_db = reload(legacy_db)
+    monkeypatch.setattr(legacy_db, "DB_PATH", str(db_path))
+
+    legacy_db.init_db()
+
+    expires = datetime.utcnow() + timedelta(days=1)
+    key_uuid = legacy_db.save_vpn_key(123, "legacy_user", "Legacy User", "vless://example", expires)
+
+    assert key_uuid is not None
+
+    with sqlite3.connect(str(db_path)) as conn:
+        cur = conn.execute(
+            "SELECT key_uuid, active FROM vpn_keys WHERE username=?", ("legacy_user",)
+        )
+        row = cur.fetchone()
+
+    assert row is not None
+    assert row[0] == key_uuid
+    assert row[1] == 0
+
 def test_get_user_returns_keys(test_app):
     client, _, _, _ = test_app
 
@@ -219,6 +330,16 @@ def test_get_user_returns_keys(test_app):
 
 def test_health_endpoint_available():
     _write_env(Path("."))
+
+    class _DummyResponse:
+        def __init__(self) -> None:
+            self.status_code = 200
+            self.text = ""
+
+    dummy_requests = types.ModuleType("requests")
+    dummy_requests.post = lambda *args, **kwargs: _DummyResponse()
+    sys.modules["requests"] = dummy_requests
+
     from api.main import app
 
     client = TestClient(app)

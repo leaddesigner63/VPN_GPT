@@ -124,7 +124,7 @@ def save_vpn_key(user_id, username, full_name, link, expires_at):
         c.execute(
             """
             INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at, active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
         """,
             (
                 user_id,
@@ -137,6 +137,7 @@ def save_vpn_key(user_id, username, full_name, link, expires_at):
             ),
         )
         conn.commit()
+        return key_uuid
 
 
 def get_expiring_keys(days_before=3):
