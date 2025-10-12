@@ -22,6 +22,7 @@ from openai import OpenAI
 
 from api.utils import db as api_db
 from utils.qrgen import make_qr
+from utils.limits import should_block_issue
 
 # === Инициализация ===
 load_dotenv("/root/VPN_GPT/.env")
@@ -139,6 +140,50 @@ logging.basicConfig(
     handlers=[logging.FileHandler("/root/VPN_GPT/bot.log"), logging.StreamHandler()],
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _load_issue_limit() -> tuple[int | None, str | None]:
+    """Возвращает настроенный лимит выдачи ключей, если он задан."""
+
+    for env_name in ("FREE_KEYS_LIMIT", "VPN_FREE_KEYS_LIMIT", "VPN_KEY_LIMIT"):
+        raw_value = os.getenv(env_name)
+        if raw_value is None or not raw_value.strip():
+            continue
+
+        try:
+            limit_value = int(raw_value)
+        except ValueError:
+            logger.warning(
+                "Игнорируем некорректное значение лимита", extra={"env": env_name, "value": raw_value}
+            )
+            continue
+
+        if limit_value > 0:
+            return limit_value, env_name
+
+        logger.warning(
+            "Лимит выдачи ключей должен быть положительным", extra={"env": env_name, "value": raw_value}
+        )
+
+    return None, None
+
+
+KEY_ISSUE_LIMIT, KEY_LIMIT_ENV = _load_issue_limit()
+if KEY_ISSUE_LIMIT:
+    logger.info(
+        "Включён лимит выдачи ключей", extra={"limit": KEY_ISSUE_LIMIT, "source": KEY_LIMIT_ENV}
+    )
+
+
+KEY_LIMIT_REACHED_MESSAGE = (
+    "⚠️ Бесплатные демо-ключи закончились — мы уже выдали все доступные "
+    "слоты. Подпишись на обновления, чтобы узнать о новых местах."
+)
+KEY_LIMIT_CHECK_FAILED_MESSAGE = (
+    "⚠️ Сейчас не получается проверить доступность ключей. Попробуй позже."
+)
+
 # === Главное меню Telegram ===
 main_kb = ReplyKeyboardMarkup(
     keyboard=[
@@ -192,12 +237,49 @@ def save_user(message: Message):
 # === Обработчики ===
 async def issue_and_send_key(message: Message, username: str) -> None:
     await message.answer("⏳ Создаю тебе VPN-ключ…", reply_markup=main_kb)
+
+    if KEY_ISSUE_LIMIT and KEY_ISSUE_LIMIT > 0:
+        if not ADMIN_TOKEN:
+            logger.error(
+                "Включён лимит выдачи ключей, но ADMIN_TOKEN не задан", extra={"username": username}
+            )
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=main_kb)
+            return
+
+        try:
+            stats = await vpn_api.list_users()
+        except VPNAPIError as api_error:
+            logger.warning(
+                "Не удалось проверить лимит выдачи ключей",
+                extra={"username": username, "error": api_error.code, "status": api_error.status},
+            )
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=main_kb)
+            return
+        except Exception:
+            logger.exception("Сбой при проверке лимита выдачи ключей", extra={"username": username})
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=main_kb)
+            return
+
+        users_payload = stats.get("users") if isinstance(stats, dict) else None
+        if not isinstance(users_payload, list):
+            logger.warning("Некорректный ответ API при проверке лимита", extra={"payload": stats})
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=main_kb)
+            return
+
+        if should_block_issue(users_payload, username, KEY_ISSUE_LIMIT):
+            logger.info(
+                "Достигнут лимит выдачи ключей",
+                extra={"limit": KEY_ISSUE_LIMIT, "username": username},
+            )
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=main_kb)
+            return
     try:
         vpn_key = await vpn_api.issue_key(username)
     except VPNAPIError as api_error:
         logging.warning(
             "Не удалось выдать ключ", extra={"username": username, "error": api_error.code, "status": api_error.status}
         )
+        error_code = (api_error.code or "").lower()
         if api_error.code in {"user_has_active_key", "duplicate"}:
             await message.answer(
                 "ℹ️ У тебя уже есть активный VPN-ключ. Проверь предыдущие сообщения или продли текущий.",
@@ -205,6 +287,8 @@ async def issue_and_send_key(message: Message, username: str) -> None:
             )
         elif api_error.code == "invalid_days":
             await message.answer("⚠️ Некорректный срок действия ключа.", reply_markup=main_kb)
+        elif "limit" in error_code or "quota" in error_code:
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=main_kb)
         else:
             status_info = f" (код {api_error.status})" if api_error.status else ""
             await message.answer(
