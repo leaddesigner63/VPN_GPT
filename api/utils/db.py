@@ -19,6 +19,16 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logger = get_logger("db")
 
+MIGRATION_ERROR: tuple[Path, Exception] | None = None
+
+
+def _resolve_db_path(db_path: Path | str | None) -> Path:
+    if db_path is None:
+        return DB_PATH
+    if isinstance(db_path, Path):
+        return db_path
+    return Path(db_path)
+
 # Таблицы: history, vpn_keys (есть), добавим assistant_threads (tg_user_id, thread_id)
 INIT_SQL = """
 CREATE TABLE IF NOT EXISTS assistant_threads (
@@ -31,12 +41,15 @@ CREATE TABLE IF NOT EXISTS assistant_threads (
 CREATE TABLE IF NOT EXISTS vpn_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT,
+  chat_id INTEGER,
   username TEXT,
   uuid TEXT,
   link TEXT,
+  issued TEXT,
+  expires TEXT,
   issued_at TEXT,
   expires_at TEXT,
-  active INTEGER DEFAULT 0
+  active INTEGER DEFAULT 1
 );
 """
 
@@ -52,6 +65,73 @@ INDEX_SQL = (
       WHERE user_id IS NOT NULL AND user_id <> ''
     """,
 )
+
+
+NEEDED_COLS_VPN_KEYS: dict[str, str] = {
+    "user_id": "TEXT",
+    "chat_id": "INTEGER",
+    "link": "TEXT",
+    "issued": "TEXT",
+    "expires": "TEXT",
+    "issued_at": "TEXT",
+    "expires_at": "TEXT",
+    "active": "INTEGER DEFAULT 1",
+}
+
+
+def _get_table_columns(con: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        cur = con.execute(f"PRAGMA table_info({table})")
+    except sqlite3.DatabaseError as exc:
+        logger.error(
+            "Failed to introspect table columns",
+            extra={"table": table, "error": str(exc)},
+        )
+        raise
+    return {row[1] for row in cur.fetchall()}
+
+
+def ensure_columns(
+    con: sqlite3.Connection,
+    table: str,
+    columns: dict[str, str],
+) -> tuple[int, set[str]]:
+    """Ensure ``table`` contains the specified columns.
+
+    Returns a tuple with the number of added columns and the resulting set of
+    column names.
+    """
+
+    existing = _get_table_columns(con, table)
+    to_add: list[tuple[str, str]] = [
+        (name, definition)
+        for name, definition in columns.items()
+        if name not in existing
+    ]
+
+    if not to_add:
+        return 0, existing
+
+    try:
+        with con:
+            for name, definition in to_add:
+                con.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
+                )
+                logger.info(
+                    "DB migration: added %s.%s %s",
+                    table,
+                    name,
+                    definition,
+                )
+    except sqlite3.DatabaseError as exc:
+        logger.error(
+            "Failed to alter table",
+            extra={"table": table, "error": str(exc)},
+        )
+        raise
+
+    return len(to_add), _get_table_columns(con, table)
 
 DEDUP_SQL = (
     """
@@ -77,11 +157,23 @@ DEDUP_SQL = (
 )
 
 @contextmanager
-def connect(*, autocommit: bool = True):
+def connect(*, autocommit: bool = True, db_path: Path | str | None = None):
     """Return a SQLite connection with optional auto-commit support."""
 
-    logger.debug("Opening SQLite connection to %s", DB_PATH)
-    con = sqlite3.connect(DB_PATH)
+    resolved_path = _resolve_db_path(db_path)
+    if MIGRATION_ERROR is not None:
+        failed_path, error = MIGRATION_ERROR
+        if resolved_path == failed_path:
+            logger.error(
+                "Refusing to open SQLite connection because migration failed",
+                extra={"error": str(error)},
+            )
+            raise RuntimeError(
+                "Database migrations failed; refusing to use the connection"
+            )
+
+    logger.debug("Opening SQLite connection to %s", resolved_path)
+    con = sqlite3.connect(resolved_path)
     con.row_factory = sqlite3.Row
 
     try:
@@ -93,7 +185,7 @@ def connect(*, autocommit: bool = True):
         con.rollback()
         raise
     finally:
-        logger.debug("Closing SQLite connection to %s", DB_PATH)
+        logger.debug("Closing SQLite connection to %s", resolved_path)
         con.close()
 
 def init_db():
@@ -224,66 +316,115 @@ def get_vpn_user_full(username: str) -> dict | None:
         return vpn_data
 
 
-def auto_update_missing_fields():
-    """Fill missing identifiers in ``vpn_keys`` table from related tables."""
+def auto_update_missing_fields(db_path: Path | str | None = None):
+    """Ensure required columns exist and backfill missing identifiers."""
 
-    with connect() as con:
-        # Auto-fill chat_id values
-        cur = con.execute(
-            """
-            SELECT vk.id, vk.username
-            FROM vpn_keys AS vk
-            WHERE vk.chat_id IS NULL OR vk.chat_id = ''
-            """
-        )
-        for row in cur.fetchall():
-            chat_row = _safe_fetch_one(
+    global MIGRATION_ERROR
+    MIGRATION_ERROR = None
+
+    resolved_path = _resolve_db_path(db_path)
+    logger.debug(
+        "Running automatic database migrations",
+        extra={"db_path": str(resolved_path)},
+    )
+
+    columns: set[str] = set()
+    try:
+        with sqlite3.connect(resolved_path) as con:
+            con.row_factory = sqlite3.Row
+            added, columns = ensure_columns(
                 con,
-                "SELECT chat_id FROM tg_users WHERE username=?",
-                (row["username"],),
+                "vpn_keys",
+                NEEDED_COLS_VPN_KEYS,
             )
-            if chat_row and chat_row["chat_id"] is not None:
-                con.execute(
-                    "UPDATE vpn_keys SET chat_id=? WHERE id=?",
-                    (chat_row["chat_id"], row["id"]),
-                )
-                logger.info(
-                    "Auto-filled chat_id for user %s", row["username"]
-                )
-
-        # Auto-fill user_id values
-        cur = con.execute(
-            """
-            SELECT vk.id, vk.username
-            FROM vpn_keys AS vk
-            WHERE vk.user_id IS NULL OR vk.user_id = ''
-            """
+    except sqlite3.DatabaseError as exc:
+        MIGRATION_ERROR = (resolved_path, exc)
+        logger.error(
+            "Database schema migration failed",
+            extra={"db_path": str(resolved_path), "error": str(exc)},
         )
-        for row in cur.fetchall():
-            user_id_value = None
+        return
 
-            history_row = _safe_fetch_one(
-                con,
-                """
-                SELECT user_id
-                FROM history
-                WHERE username=? AND user_id IS NOT NULL AND user_id <> ''
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (row["username"],),
-            )
-            if history_row and history_row["user_id"]:
-                user_id_value = history_row["user_id"]
-            elif row["username"]:
-                user_id_value = row["username"]
+    logger.info(
+        "DB migration complete, vpn_keys: +%d column(s)",
+        added,
+    )
 
-            if user_id_value:
-                con.execute(
-                    "UPDATE vpn_keys SET user_id=? WHERE id=?",
-                    (user_id_value, row["id"]),
+    if MIGRATION_ERROR is not None:
+        return
+
+    try:
+        with connect(db_path=resolved_path) as con:
+            if "chat_id" in columns:
+                cur = con.execute(
+                    """
+                    SELECT vk.id,
+                           vk.username,
+                           COALESCE(vk.chat_id, tu.chat_id) AS resolved_chat_id
+                    FROM vpn_keys AS vk
+                    LEFT JOIN tg_users AS tu ON tu.username = vk.username
+                    WHERE vk.chat_id IS NULL OR vk.chat_id = ''
+                    """
                 )
-                logger.info(
-                    "Auto-filled user_id for user %s", row["username"]
+                for row in cur.fetchall():
+                    resolved_chat_id = row["resolved_chat_id"]
+                    if resolved_chat_id is None:
+                        continue
+                    con.execute(
+                        "UPDATE vpn_keys SET chat_id=? WHERE id=?",
+                        (resolved_chat_id, row["id"]),
+                    )
+                    logger.info(
+                        "Auto-filled chat_id for user %s", row["username"]
+                    )
+            else:
+                logger.warning(
+                    "Skipping chat_id backfill because column is missing in vpn_keys"
                 )
+
+            if "user_id" in columns:
+                cur = con.execute(
+                    """
+                    SELECT vk.id, vk.username
+                    FROM vpn_keys AS vk
+                    WHERE vk.user_id IS NULL OR vk.user_id = ''
+                    """
+                )
+                for row in cur.fetchall():
+                    user_id_value = None
+
+                    history_row = _safe_fetch_one(
+                        con,
+                        """
+                        SELECT user_id
+                        FROM history
+                        WHERE username=? AND user_id IS NOT NULL AND user_id <> ''
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        (row["username"],),
+                    )
+                    if history_row and history_row["user_id"]:
+                        user_id_value = history_row["user_id"]
+                    elif row["username"]:
+                        user_id_value = row["username"]
+
+                    if user_id_value:
+                        con.execute(
+                            "UPDATE vpn_keys SET user_id=? WHERE id=?",
+                            (user_id_value, row["id"]),
+                        )
+                        logger.info(
+                            "Auto-filled user_id for user %s",
+                            row["username"],
+                        )
+            else:
+                logger.warning(
+                    "Skipping user_id backfill because column is missing in vpn_keys"
+                )
+    except sqlite3.DatabaseError as exc:
+        logger.error(
+            "Failed to auto-update missing fields",
+            extra={"db_path": str(resolved_path), "error": str(exc)},
+        )
 
