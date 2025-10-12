@@ -1,491 +1,271 @@
 from __future__ import annotations
 
-import datetime
+import datetime as dt
 import os
-import uuid as uuidlib
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field
 
-from api.utils import xray
-from ..utils.db import connect
-from api.utils.link import compose_vless_link
+from api.utils.db import connect
 from api.utils.logging import get_logger
-
-router = APIRouter()
+from api.utils.vless import build_vless_link
+from api.utils import xray
 
 logger = get_logger("endpoints.vpn")
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 
-class IssueKeyPayload(BaseModel):
-    email: EmailStr
+def require_admin_token(authorization: str | None = Header(default=None, alias="Authorization")) -> None:
+    """Ensure all VPN endpoints are protected with the admin bearer token."""
+
+    if not ADMIN_TOKEN:
+        logger.error("ADMIN_TOKEN is not configured; denying access")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="admin_token_not_configured")
+
+    if not authorization:
+        logger.warning("Missing Authorization header for VPN endpoint")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
+    try:
+        scheme, token = authorization.split(" ", 1)
+    except ValueError:
+        logger.warning("Malformed Authorization header for VPN endpoint")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
+    if scheme.lower() != "bearer" or token.strip() != ADMIN_TOKEN:
+        logger.warning("Invalid admin token provided for VPN endpoint")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+
+
+router = APIRouter(dependencies=[Depends(require_admin_token)])
+
+
+class IssueKeyRequest(BaseModel):
+    username: str = Field(..., description="Telegram username без @")
+    days: int | None = Field(3, description="Количество дней действия ключа")
 
 
 class IssueKeyResponse(BaseModel):
-    email: EmailStr
-    key: str
-    created: bool
+    ok: bool = True
+    username: str
+    uuid: str
+    link: str
+    expires_at: str
 
 
-class KeyResponse(BaseModel):
-    email: EmailStr
-    key: str
+class RenewKeyRequest(BaseModel):
+    username: str
+    days: int = 30
 
 
-class BulkIssueReport(BaseModel):
-    issued: int
-    skipped: int
+class DisableKeyRequest(BaseModel):
+    uuid: str
 
 
-EMAIL_ADAPTER = TypeAdapter(EmailStr)
+def _normalise_username(raw: str | None) -> str:
+    if raw is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing_username")
+
+    username = raw.strip()
+    if username.startswith("@"):
+        username = username[1:].strip()
+
+    if not username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing_username")
+
+    return username
 
 
-def _normalise_email(raw_email: str) -> str:
-    """Validate and normalise an e-mail string to lowercase."""
-
-    value = (raw_email or "").strip()
-    if not value:
-        raise HTTPException(status_code=400, detail="email is required")
-    try:
-        email = EMAIL_ADAPTER.validate_python(value)
-    except ValidationError as exc:
-        logger.warning("Rejected invalid email", extra={"email": raw_email})
-        raise HTTPException(status_code=400, detail="invalid email format") from exc
-    return email.lower()
+def _json_error(code: str, status_code: int = status.HTTP_400_BAD_REQUEST) -> JSONResponse:
+    logger.warning("Returning error response", extra={"error": code, "status": status_code})
+    return JSONResponse(status_code=status_code, content={"ok": False, "error": code})
 
 
-def _error_response(code: str, status: int = 400) -> JSONResponse:
-    logger.warning("Returning error response", extra={"error": code, "status": status})
-    return JSONResponse(status_code=status, content={"ok": False, "error": code})
+def _store_vpn_key(
+    conn,
+    *,
+    username: str,
+    uuid_value: str,
+    link: str,
+    issued_at: dt.datetime,
+    expires_at: dt.datetime,
+) -> None:
+    existing = conn.execute(
+        "SELECT id FROM vpn_keys WHERE username=? LIMIT 1",
+        (username,),
+    ).fetchone()
 
+    expires_str = expires_at.isoformat()
+    issued_str = issued_at.isoformat()
 
-def _compose_link_safe(uuid: str, email: str) -> str | None:
-    """Compose a VLESS link while tolerating configuration errors."""
-
-    try:
-        return compose_vless_link(uuid, email)
-    except Exception as err:  # pragma: no cover - defensive logging
-        logger.exception(
-            "Failed to compose VLESS link", extra={"email": email, "uuid": uuid}
+    if existing:
+        conn.execute(
+            """
+            UPDATE vpn_keys
+            SET uuid=?, link=?, issued_at=?, expires_at=?, active=1
+            WHERE id=?
+            """,
+            (uuid_value, link, issued_str, expires_str, existing["id"]),
         )
-        return None
-
-
-def _update_expiry(username: str, new_exp: str) -> bool:
-    with connect() as conn:
-        cur = conn.execute(
-            "UPDATE vpn_keys SET expires_at=? WHERE username=? AND active=1",
-            (new_exp, username),
+    else:
+        conn.execute(
+            """
+            INSERT INTO vpn_keys (username, uuid, link, issued_at, expires_at, active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (username, uuid_value, link, issued_str, expires_str),
         )
-        updated = cur.rowcount > 0
-    if updated:
-        logger.info("Updated VPN key expiry", extra={"username": username, "expires": new_exp})
-    else:
-        logger.warning("Attempted to renew non-existing VPN key", extra={"username": username})
-    return updated
 
 
-def _deactivate(uuid: str) -> bool:
-    with connect() as conn:
-        cur = conn.execute("UPDATE vpn_keys SET active=0 WHERE uuid=?", (uuid,))
-        deactivated = cur.rowcount > 0
-    if deactivated:
-        logger.info("Deactivated VPN key", extra={"uuid": uuid})
-    else:
-        logger.warning("Attempted to deactivate unknown VPN key", extra={"uuid": uuid})
-    return deactivated
+def _parse_date(value: str) -> dt.datetime:
+    try:
+        return dt.datetime.fromisoformat(value)
+    except ValueError:
+        return dt.datetime.strptime(value, "%Y-%m-%d")
 
 
 def _get_active_key(username: str) -> dict[str, Any] | None:
     with connect() as conn:
         cur = conn.execute(
-            "SELECT uuid, expires_at FROM vpn_keys WHERE username=? AND active=1 LIMIT 1",
+            "SELECT uuid, expires_at, link FROM vpn_keys WHERE username=? AND active=1 LIMIT 1",
             (username,),
         )
         row = cur.fetchone()
-        if row:
-            logger.debug("Located active VPN key for %s", username)
-            return dict(row)
-        logger.debug("No active VPN key found for %s", username)
-        return None
+        return None if row is None else dict(row)
 
 
-# === Core logic ===
-# === API endpoints ===
+def _update_expiry(username: str, new_exp: dt.datetime) -> bool:
+    with connect() as conn:
+        cur = conn.execute(
+            "UPDATE vpn_keys SET expires_at=? WHERE username=? AND active=1",
+            (new_exp.isoformat(), username),
+        )
+        return cur.rowcount > 0
+
+
+def _deactivate(uuid_value: str) -> bool:
+    with connect() as conn:
+        cur = conn.execute("UPDATE vpn_keys SET active=0 WHERE uuid=?", (uuid_value,))
+        return cur.rowcount > 0
+
+
 @router.post(
     "/issue_key",
-    summary="Выдать VPN-ключ",
-    description="Создаёт VPN-ключ для клиента или возвращает существующий.",
+    operation_id="issueVpnKey",
     response_model=IssueKeyResponse,
-    responses={
-        400: {
-            "description": "Некорректный запрос",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "missing": {"value": {"detail": "email is required"}},
-                        "invalid": {
-                            "value": {"detail": "invalid email format"}
-                        },
-                    }
-                }
-            },
-        },
-        409: {
-            "description": "Конфликт уникальности email",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "conflict": {
-                            "value": {"detail": "email conflict"}
-                        }
-                    }
-                }
-            },
-        },
-        502: {
-            "description": "Ошибка интеграции с Xray",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "xray": {
-                            "value": {"detail": "failed to sync key with xray"}
-                        }
-                    }
-                }
-            },
-        },
-    },
 )
-async def issue_vpn_key(request: Request) -> IssueKeyResponse:
-    try:
-        payload = await request.json()
-    except ValueError as exc:
-        logger.warning("Invalid JSON body for key issuance")
-        raise HTTPException(status_code=400, detail="invalid json body") from exc
+def issue_vpn_key(payload: IssueKeyRequest) -> IssueKeyResponse:
+    username = _normalise_username(payload.username)
 
-    if not isinstance(payload, dict):
-        logger.warning("Unexpected payload type for key issuance", extra={"type": type(payload).__name__})
-        raise HTTPException(status_code=400, detail="invalid request body")
+    days = payload.days if payload.days is not None else 3
+    if days <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_days")
 
-    raw_email = payload.get("email")
-    if raw_email is None:
-        raise HTTPException(status_code=400, detail="email is required")
-
-    email = _normalise_email(str(raw_email))
-    logger.info("Processing VPN key issuance", extra={"email": email})
+    issued_at = dt.datetime.now(dt.UTC)
+    expires_at = issued_at + dt.timedelta(days=days)
+    uuid_value = str(uuid.uuid4())
+    link = build_vless_link(uuid_value, username)
 
     with connect(autocommit=False) as conn:
-        row = conn.execute(
-            "SELECT id, uuid, active FROM vpn_keys WHERE LOWER(username)=? LIMIT 1",
-            (email,),
-        ).fetchone()
-
-        if row and row["uuid"]:
-            logger.info(
-                "Returning existing VPN key", extra={"email": email, "uuid": row["uuid"]}
-            )
-            conn.commit()
-            return IssueKeyResponse(email=email, key=row["uuid"], created=False)
-
-        key = str(uuidlib.uuid4())
-        issued_at = datetime.datetime.now(datetime.UTC).isoformat()
-        link = _compose_link_safe(key, email)
-
-        if row:
-            conn.execute(
-                """
-                UPDATE vpn_keys
-                SET uuid=?, link=?, issued_at=?, active=1, expires_at=NULL, username=?
-                WHERE id=?
-                """,
-                (key, link, issued_at, email, row["id"]),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO vpn_keys (username, uuid, link, issued_at, active)
-                VALUES (?, ?, ?, ?, 1)
-                """,
-                (email, key, link, issued_at),
-            )
+        _store_vpn_key(
+            conn,
+            username=username,
+            uuid_value=uuid_value,
+            link=link,
+            issued_at=issued_at,
+            expires_at=expires_at,
+        )
 
         try:
-            xray.add_client(email=email, client_id=key)
-        except Exception as exc:  # pragma: no cover - relies on system state
+            xray.add_client_no_duplicates(uuid_value, username)
+        except xray.XrayRestartError:
             conn.rollback()
             logger.exception(
-                "Failed to synchronise key with Xray", extra={"email": email, "uuid": key}
+                "Xray restart failed after issuing key", extra={"username": username, "uuid": uuid_value}
             )
-            raise HTTPException(status_code=502, detail="failed to sync key with xray") from exc
-
-        try:
-            conn.commit()
-        except Exception as db_exc:  # pragma: no cover - defensive cleanup
+            return _json_error("xray_restart_failed", status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception:  # pragma: no cover - defensive logging
             conn.rollback()
             logger.exception(
-                "Database commit failed after key issuance", extra={"email": email, "uuid": key}
+                "Unexpected Xray synchronisation failure", extra={"username": username, "uuid": uuid_value}
             )
-            try:
-                xray.remove_client(key)
-            except Exception:
-                logger.exception(
-                    "Failed to rollback Xray client after DB error",
-                    extra={"email": email, "uuid": key},
-                )
-            raise HTTPException(status_code=500, detail="failed to store key") from db_exc
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="failed_to_sync_xray")
 
-    logger.info("Issued new VPN key", extra={"email": email, "uuid": key})
-    return IssueKeyResponse(email=email, key=key, created=True)
-
-
-@router.get(
-    "/key",
-    summary="Получить VPN-ключ",
-    response_model=KeyResponse,
-    responses={
-        400: {
-            "description": "Некорректный email",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "invalid": {
-                            "value": {"detail": "invalid email format"}
-                        }
-                    }
-                }
-            },
-        },
-        404: {
-            "description": "Ключ не найден",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "missing": {"value": {"detail": "key not found"}}
-                    }
-                }
-            },
-        },
-    },
-)
-def get_vpn_key(email: str = Query(..., description="Email клиента")) -> KeyResponse:
-    email = _normalise_email(email)
-    with connect() as conn:
-        row = conn.execute(
-            """
-            SELECT uuid
-            FROM vpn_keys
-            WHERE active=1 AND uuid IS NOT NULL AND TRIM(uuid)<>'' AND LOWER(username)=?
-            LIMIT 1
-            """,
-            (email,),
-        ).fetchone()
-
-    if not row or not row["uuid"]:
-        logger.info("VPN key lookup failed", extra={"email": email})
-        raise HTTPException(status_code=404, detail="key not found")
-
-    logger.info("VPN key lookup succeeded", extra={"email": email, "uuid": row["uuid"]})
-    return KeyResponse(email=email, key=row["uuid"])
-
-
-@router.post(
-    "/issue_missing_keys",
-    summary="Выдать отсутствующие VPN-ключи",
-    response_model=BulkIssueReport,
-    responses={
-        401: {
-            "description": "Требуется авторизация",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "unauthorized": {"value": {"detail": "unauthorized"}}
-                    }
-                }
-            },
-        },
-        502: {
-            "description": "Ошибка интеграции с Xray",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "xray": {
-                            "value": {"detail": "failed to sync keys with xray"}
-                        }
-                    }
-                }
-            },
-        },
-    },
-)
-def issue_missing_keys(
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token")
-) -> BulkIssueReport:
-    if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
-        logger.warning("Unauthorized bulk key issuance attempt")
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-    logger.info("Starting bulk issuance of missing VPN keys")
-    issued = 0
-    skipped = 0
-    keys_for_xray: list[tuple[str, str]] = []
-
-    with connect(autocommit=False) as conn:
-        rows = conn.execute(
-            """
-            SELECT id, username
-            FROM vpn_keys
-            WHERE (uuid IS NULL OR TRIM(uuid)='')
-              AND username IS NOT NULL AND TRIM(username)<>''
-            ORDER BY id
-            """
-        ).fetchall()
-
-        if not rows:
-            conn.commit()
-            return BulkIssueReport(issued=0, skipped=0)
-
-        now = datetime.datetime.now(datetime.UTC).isoformat()
-
-        for row in rows:
-            candidate = row["username"]
-            try:
-                email = _normalise_email(candidate)
-            except HTTPException:
-                skipped += 1
-                continue
-
-            duplicate = conn.execute(
-                "SELECT 1 FROM vpn_keys WHERE LOWER(username)=? AND id<>?",
-                (email, row["id"]),
-            ).fetchone()
-            if duplicate:
-                skipped += 1
-                continue
-
-            key = str(uuidlib.uuid4())
-            link = _compose_link_safe(key, email)
-            conn.execute(
-                """
-                UPDATE vpn_keys
-                SET username=?, uuid=?, link=?, issued_at=?, active=1, expires_at=NULL
-                WHERE id=?
-                """,
-                (email, key, link, now, row["id"]),
-            )
-            keys_for_xray.append((email, key))
-            issued += 1
-
-        if not keys_for_xray:
-            conn.commit()
-            return BulkIssueReport(issued=0, skipped=skipped)
-
-        added: list[str] = []
-        try:
-            for email, key in keys_for_xray:
-                xray.add_client(email=email, client_id=key)
-                added.append(key)
-        except Exception as exc:  # pragma: no cover - depends on system state
-            conn.rollback()
-            for uuid in reversed(added):
-                try:
-                    xray.remove_client(uuid)
-                except Exception:
-                    logger.exception(
-                        "Failed to rollback Xray client after bulk sync error",
-                        extra={"uuid": uuid},
-                    )
-            logger.exception("Bulk Xray synchronisation failed")
-            raise HTTPException(status_code=502, detail="failed to sync keys with xray") from exc
-
-        try:
-            conn.commit()
-        except Exception as db_exc:  # pragma: no cover - defensive cleanup
-            conn.rollback()
-            for uuid in reversed(keys_for_xray):
-                try:
-                    xray.remove_client(uuid[1])
-                except Exception:
-                    logger.exception(
-                        "Failed to rollback Xray client after DB error",
-                        extra={"uuid": uuid[1]},
-                    )
-            raise HTTPException(status_code=500, detail="failed to store keys") from db_exc
+        conn.commit()
 
     logger.info(
-        "Bulk issuance complete", extra={"issued": issued, "skipped": skipped}
+        "Issued VPN key",
+        extra={"username": username, "uuid": uuid_value, "expires_at": expires_at.isoformat()},
     )
-    return BulkIssueReport(issued=issued, skipped=skipped)
+    return IssueKeyResponse(
+        ok=True,
+        username=username,
+        uuid=uuid_value,
+        link=link,
+        expires_at=expires_at.isoformat(),
+    )
 
 
-issue_vpn_key.openapi_extra = {
-    "requestBody": {
-        "required": True,
-        "content": {
-            "application/json": {
-                "schema": IssueKeyPayload.model_json_schema(),
-                "examples": {
-                    "new": {
-                        "summary": "Создание ключа",
-                        "value": {"email": "user@example.com"},
-                    }
-                },
-            }
-        },
-    }
-}
+@router.post("/renew_key", operation_id="renewVpnKey")
+def renew_vpn_key(payload: RenewKeyRequest) -> dict[str, Any]:
+    username = _normalise_username(payload.username)
 
-@router.post("/renew_key")
-async def renew_vpn_key(request: Request):
-    data = await request.json()
-    username = data.get("username")
-    if not username or not str(username).strip():
-        return _error_response("missing_username")
+    if payload.days <= 0:
+        return _json_error("invalid_days")
+
+    current = _get_active_key(username)
+    if not current:
+        return _json_error("user_not_found", status.HTTP_404_NOT_FOUND)
 
     try:
-        days = int(data.get("days", 30))
-    except (TypeError, ValueError):
-        return _error_response("invalid_days")
-    if days <= 0:
-        return _error_response("invalid_days")
+        current_exp = _parse_date(current["expires_at"])
+    except Exception:  # pragma: no cover - defensive conversion
+        current_exp = dt.datetime.now(dt.UTC)
 
-    username = str(username).strip()
-    logger.info("Renewing VPN key", extra={"username": username, "days": days})
-    row = _get_active_key(username)
-    if not row:
-        return _error_response("user_not_found", status=404)
-
-    new_exp = (
-        datetime.datetime.strptime(row["expires_at"], "%Y-%m-%d")
-        + datetime.timedelta(days=days)
-    ).strftime("%Y-%m-%d")
-
+    new_exp = current_exp + dt.timedelta(days=payload.days)
     if not _update_expiry(username, new_exp):
-        return _error_response("failed_to_update", status=500)
+        return _json_error("failed_to_update", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    return {"ok": True, "username": username, "expires": new_exp}
+    return {"ok": True, "username": username, "expires_at": new_exp.isoformat()}
 
 
-@router.post("/disable_key")
-async def disable_vpn_key(request: Request):
-    data = await request.json()
-    uid = data.get("uuid")
-    if not uid or not str(uid).strip():
-        return _error_response("missing_uuid")
+@router.post("/disable_key", operation_id="disableVpnKey")
+def disable_vpn_key(payload: DisableKeyRequest) -> dict[str, Any]:
+    uuid_value = payload.uuid.strip()
+    if not uuid_value:
+        return _json_error("missing_uuid")
 
-    uid = str(uid).strip()
-    logger.info("Disabling VPN key", extra={"uuid": uid})
-
-    if not _deactivate(uid):
-        return _error_response("uuid_not_found", status=404)
+    if not _deactivate(uuid_value):
+        return _json_error("uuid_not_found", status.HTTP_404_NOT_FOUND)
 
     try:
-        xray.remove_client(uid)
-    except (FileNotFoundError, json.JSONDecodeError, subprocess.CalledProcessError) as err:
-        logger.exception("Failed to remove client from Xray", extra={"uuid": uid, "error": str(err)})
+        xray.remove_client(uuid_value)
+    except xray.XrayError:  # pragma: no cover - logging inside helper
+        logger.exception("Failed to remove client from Xray", extra={"uuid": uuid_value})
 
-    return {"ok": True, "uuid": uid}
+    return {"ok": True, "uuid": uuid_value}
+
+
+@router.get("/users/{username}", operation_id="getUserByName")
+def get_user(username: str) -> dict[str, Any]:
+    username = _normalise_username(username)
+    key = _get_active_key(username)
+    if not key:
+        return {"ok": True, "username": username, "keys": []}
+    return {
+        "ok": True,
+        "username": username,
+        "keys": [
+            {
+                "uuid": key["uuid"],
+                "active": True,
+                "expires_at": key["expires_at"],
+                "link": key["link"],
+            }
+        ],
+    }
+
