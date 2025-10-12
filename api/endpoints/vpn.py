@@ -50,11 +50,50 @@ def _insert_vpn_key(username: str, uid: str, expires: str, link: str) -> bool:
                 tuple(payload.values()),
             )
     except sqlite3.IntegrityError:
-        logger.warning(
-            "Duplicate VPN key insertion prevented",
+        logger.info(
+            "Existing VPN record detected, attempting recovery",
+            extra={"username": username},
+        )
+
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT id, active, uuid, link FROM vpn_keys WHERE username=?",
+                (username,),
+            ).fetchone()
+
+            if not row:
+                logger.warning(
+                    "Integrity error without matching row",
+                    extra={"username": username},
+                )
+                return False
+
+            if row["active"] == 1 and row["uuid"] and row["link"]:
+                logger.warning(
+                    "Duplicate VPN key insertion prevented",
+                    extra={"username": username, "uuid": row["uuid"]},
+                )
+                return False
+
+            conn.execute(
+                """
+                UPDATE vpn_keys
+                SET uuid=?, link=?, issued_at=?, expires_at=?, active=1
+                WHERE id=?
+                """,
+                (
+                    uid,
+                    link,
+                    payload["issued_at"],
+                    payload["expires_at"],
+                    row["id"],
+                ),
+            )
+        logger.info(
+            "Reused existing VPN record for user",
             extra={"username": username, "uuid": uid},
         )
-        return False
+        return True
 
     logger.info("Inserted new VPN key", extra={"username": username, "uuid": uid, "expires": expires})
     return True
