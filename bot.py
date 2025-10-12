@@ -27,7 +27,7 @@ load_dotenv("/root/VPN_GPT/.env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GPT_API_KEY = os.getenv("GPT_API_KEY")
 ADMIN_ID = os.getenv("ADMIN_ID")
-VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8000")
+VPN_API_URL = os.getenv("VPN_API_URL", "https://vpn-gpt.store/api")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))

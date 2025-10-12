@@ -12,7 +12,7 @@ from utils.qrgen import make_qr
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8000")
+VPN_API_URL = os.getenv("VPN_API_URL", "https://vpn-gpt.store/api")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
 
