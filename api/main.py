@@ -16,6 +16,8 @@ load_dotenv()
 configure_logging()
 logger = get_logger("api")
 
+DEFAULT_OPENAPI_SERVER = "https://vpn-gpt.store/api"
+
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 # === Routers ===
@@ -79,6 +81,11 @@ def custom_openapi() -> dict[str, Any]:
     if server_url:
         openapi_schema["servers"] = [{"url": server_url}]
         logger.info("Configured OpenAPI server override: %s", server_url)
+    else:
+        openapi_schema["servers"] = [{"url": DEFAULT_OPENAPI_SERVER}]
+        logger.info(
+            "Using default OpenAPI server URL", extra={"server_url": DEFAULT_OPENAPI_SERVER}
+        )
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
