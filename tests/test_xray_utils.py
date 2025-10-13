@@ -4,6 +4,12 @@ import json
 from pathlib import Path
 
 import importlib
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _write_config(path: Path, clients: list[dict]) -> None:
@@ -100,3 +106,25 @@ def test_add_client_deduplicates_existing_entries(tmp_path, monkeypatch):
 
     clients = _load_config(config_path)["inbounds"][0]["settings"]["clients"]
     assert clients == [{"id": "current-alice", "level": 0, "email": "alice"}]
+
+
+def test_add_client_normalises_email_and_case(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        [
+            {"id": "old-alice", "level": 0, "email": "  Alice  "},
+            {"id": "bob-uuid", "level": 0, "email": "bob"},
+        ],
+    )
+
+    xray, restarts = _reload_xray(monkeypatch, config_path)
+
+    changed = xray.add_client_no_duplicates("new-alice", "alice")
+
+    assert changed is True
+    assert len(restarts) == 1
+
+    clients = _load_config(config_path)["inbounds"][0]["settings"]["clients"]
+    assert {client["email"] for client in clients} == {"alice", "bob"}
+    assert any(client["id"] == "new-alice" for client in clients if client["email"] == "alice")
