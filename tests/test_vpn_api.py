@@ -185,6 +185,59 @@ def test_payment_confirmation_extends_subscription(api_app, configured_env):
     assert keys[0]["trial"] == 0
 
 
+def test_issue_key_returns_503_when_service_token_missing(tmp_path, monkeypatch):
+    db_path = tmp_path / "token-missing.db"
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "VLESS_HOST=test.example",
+                "VLESS_PORT=2053",
+                "BOT_PAYMENT_URL=https://vpn-gpt.store/pay",
+                "TRIAL_DAYS=3",
+                "PLANS=1m:180",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ENV_PATH", str(env_path))
+    monkeypatch.setenv("DATABASE", str(db_path))
+    monkeypatch.delenv("ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("INTERNAL_TOKEN", raising=False)
+
+    import importlib
+
+    import api.config as config_module
+    importlib.reload(config_module)
+
+    import api.endpoints.security as security_module
+    importlib.reload(security_module)
+
+    import api.utils.db as db_module
+    importlib.reload(db_module)
+    db_module.init_db()
+
+    import api.main as api_main
+
+    importlib.reload(api_main)
+
+    app = FastAPI()
+    app.include_router(api_main.vpn.router)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/vpn/issue_key",
+            json={"username": "zoe"},
+        )
+    finally:
+        client.close()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "service_token_not_configured"}
+
+
 def test_auto_update_adds_trial_column(tmp_path):
     legacy_db = tmp_path / "legacy.db"
     con = sqlite3.connect(legacy_db)

@@ -244,6 +244,15 @@ async def issue_trial_key(username: str, chat_id: int) -> dict[str, Any] | None:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 409:
             return exc.response.json()
+        if exc.response.status_code == 503:
+            try:
+                error_body = exc.response.json()
+            except ValueError:  # pragma: no cover - defensive
+                error_body = {"detail": exc.response.text}
+            detail = error_body.get("error") or error_body.get("detail")
+            if detail == "service_token_not_configured":
+                logger.error("VPN API is unavailable: service token is not configured")
+                return {"ok": False, "error": "service_unavailable"}
         logger.exception("Failed to issue key")
         return None
 
@@ -361,6 +370,15 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     if not payload:
         await call.message.edit_text(
             "⚠️ Не удалось выдать ключ. Попробуй позже или свяжись с поддержкой.",
+            reply_markup=build_back_menu(),
+        )
+        await call.answer()
+        return
+
+    if payload.get("error") == "service_unavailable":
+        await call.message.edit_text(
+            "😔 Сейчас не удаётся выдать ключи — сервис недоступен. "
+            "Мы уже работаем над решением. Попробуй позже или напиши в поддержку.",
             reply_markup=build_back_menu(),
         )
         await call.answer()
