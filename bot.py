@@ -11,16 +11,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
-from aiogram.exceptions import TelegramBadRequest
-from aiogram import F
-from aiogram.types import (
-    BufferedInputFile,
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-    User,
-)
+from aiogram.types import BufferedInputFile, Message, User
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -188,20 +179,6 @@ KEY_LIMIT_CHECK_FAILED_MESSAGE = (
     "⚠️ Сейчас не получается проверить доступность ключей. Попробуй позже."
 )
 
-# === Главное меню Telegram ===
-MENU_KEYBOARD = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="🔑 Мой ключ", callback_data="menu:mykey")],
-        [InlineKeyboardButton(text="♻️ Продлить подписку", callback_data="menu:renew")],
-        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings")],
-        [InlineKeyboardButton(text="⬆️ Скрыть меню", callback_data="menu:close")],
-    ]
-)
-
-OPEN_MENU_KEYBOARD = InlineKeyboardMarkup(
-    inline_keyboard=[[InlineKeyboardButton(text="📋 Открыть меню", callback_data="menu:open")]]
-)
-
 SETTINGS_SESSIONS: set[int] = set()
 SETTINGS_SYSTEM_PROMPT = (
     "Ты — специалист по настройке VPN WireGuard для сервиса VPN_GPT."
@@ -253,14 +230,14 @@ def save_user(user: User, chat_id: int):
 
 # === Обработчики ===
 async def issue_and_send_key(message: Message, username: str) -> None:
-    await message.answer("⏳ Создаю тебе VPN-ключ…", reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer("⏳ Создаю тебе VPN-ключ…")
 
     if KEY_ISSUE_LIMIT and KEY_ISSUE_LIMIT > 0:
         if not ADMIN_TOKEN:
             logger.error(
                 "Включён лимит выдачи ключей, но ADMIN_TOKEN не задан", extra={"username": username}
             )
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
             return
 
         try:
@@ -270,17 +247,17 @@ async def issue_and_send_key(message: Message, username: str) -> None:
                 "Не удалось проверить лимит выдачи ключей",
                 extra={"username": username, "error": api_error.code, "status": api_error.status},
             )
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
             return
         except Exception:
             logger.exception("Сбой при проверке лимита выдачи ключей", extra={"username": username})
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
             return
 
         users_payload = stats.get("users") if isinstance(stats, dict) else None
         if not isinstance(users_payload, list):
             logger.warning("Некорректный ответ API при проверке лимита", extra={"payload": stats})
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
             return
 
         if should_block_issue(users_payload, username, KEY_ISSUE_LIMIT):
@@ -288,7 +265,7 @@ async def issue_and_send_key(message: Message, username: str) -> None:
                 "Достигнут лимит выдачи ключей",
                 extra={"limit": KEY_ISSUE_LIMIT, "username": username},
             )
-            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE)
             return
     try:
         vpn_key = await vpn_api.issue_key(username)
@@ -299,33 +276,25 @@ async def issue_and_send_key(message: Message, username: str) -> None:
         error_code = (api_error.code or "").lower()
         if api_error.code in {"user_has_active_key", "duplicate"}:
             await message.answer(
-                "ℹ️ У тебя уже есть активный VPN-ключ. Проверь предыдущие сообщения или продли текущий через меню.",
-                reply_markup=OPEN_MENU_KEYBOARD,
+                "ℹ️ У тебя уже есть активный VPN-ключ. Проверь предыдущие сообщения или напиши «продлить подписку».",
             )
         elif api_error.code == "invalid_days":
-            await message.answer("⚠️ Некорректный срок действия ключа.", reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer("⚠️ Некорректный срок действия ключа.")
         elif "limit" in error_code or "quota" in error_code:
-            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE)
         else:
             status_info = f" (код {api_error.status})" if api_error.status else ""
-            await message.answer(
-                "⚠️ Не получилось создать ключ. Попробуй ещё раз позже." + status_info,
-                reply_markup=OPEN_MENU_KEYBOARD,
-            )
+            await message.answer("⚠️ Не получилось создать ключ. Попробуй ещё раз позже." + status_info)
         return
     except Exception:
         logging.exception("Сбой при выдаче VPN-ключа", extra={"username": username})
-        await message.answer(
-            "⚠️ Не получилось создать ключ. Попробуй ещё раз чуть позже.",
-            reply_markup=OPEN_MENU_KEYBOARD,
-        )
+        await message.answer("⚠️ Не получилось создать ключ. Попробуй ещё раз чуть позже.")
         return
 
     await message.answer(
         "🎁 Твой бесплатный VPN-ключ готов!\n\n"
         f"🔗 Ссылка:\n{vpn_key.link}\n"
         f"⏳ Действует до: {vpn_key.expires_at}",
-        reply_markup=OPEN_MENU_KEYBOARD,
     )
 
     qr_stream = make_qr(vpn_key.link)
@@ -336,7 +305,7 @@ async def issue_and_send_key(message: Message, username: str) -> None:
 
 
 async def renew_vpn_key(message: Message, username: str) -> None:
-    await message.answer("♻️ Продляю твою подписку…", reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer("♻️ Продляю твою подписку…")
     try:
         info = await vpn_api.renew_key(username)
     except VPNAPIError as api_error:
@@ -345,31 +314,23 @@ async def renew_vpn_key(message: Message, username: str) -> None:
         )
         if api_error.code == "user_not_found":
             await message.answer(
-                "⚠️ Активный ключ не найден. Выпусти новый через пункт «Мой ключ» в меню.",
-                reply_markup=OPEN_MENU_KEYBOARD,
+                "⚠️ Активный ключ не найден. Напиши «мой ключ», чтобы оформить новую подписку.",
             )
             await issue_and_send_key(message, username)
         elif api_error.code == "invalid_days":
-            await message.answer("⚠️ Некорректный срок продления.", reply_markup=OPEN_MENU_KEYBOARD)
+            await message.answer("⚠️ Некорректный срок продления.")
         else:
             status_info = f" (код {api_error.status})" if api_error.status else ""
-            await message.answer(
-                "⚠️ Не получилось продлить ключ." + status_info,
-                reply_markup=OPEN_MENU_KEYBOARD,
-            )
+            await message.answer("⚠️ Не получилось продлить ключ." + status_info)
         return
     except Exception:
         logging.exception("Сбой при продлении VPN-ключа", extra={"username": username})
-        await message.answer(
-            "⚠️ Произошла ошибка при продлении. Попробуй снова позже.",
-            reply_markup=OPEN_MENU_KEYBOARD,
-        )
+        await message.answer("⚠️ Произошла ошибка при продлении. Попробуй снова позже.")
         return
 
     await message.answer(
         "✅ Ключ успешно продлён!\n"
         f"Новый срок действия до: {info.expires_at}",
-        reply_markup=OPEN_MENU_KEYBOARD,
     )
 
 
@@ -381,15 +342,17 @@ async def send_key_status(message: Message, username: str) -> None:
             "Не удалось получить статус ключа",
             extra={"username": username, "error": api_error.code, "status": api_error.status},
         )
-        await message.answer("⚠️ Не удалось получить информацию о ключе. Попробуй позже.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⚠️ Не удалось получить информацию о ключе. Попробуй позже.")
         return
     except Exception:
         logging.exception("Сбой при запросе статуса ключа", extra={"username": username})
-        await message.answer("⚠️ Произошла ошибка. Попробуй снова позже.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⚠️ Произошла ошибка. Попробуй снова позже.")
         return
 
     if not payload.get("ok"):
-        await message.answer("ℹ️ Активный ключ не найден. Используй пункт «Мой ключ» в меню, чтобы оформить новую подписку.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer(
+            "ℹ️ Активный ключ не найден. Напиши «мой ключ», чтобы оформить новую подписку.",
+        )
         return
 
     link = payload.get("link")
@@ -401,7 +364,7 @@ async def send_key_status(message: Message, username: str) -> None:
         f"Ссылка: {link}\n"
         f"Действует до: {expires}"
     )
-    await message.answer(text, reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer(text)
 
 
 async def start_settings_dialog(message: Message, username: str) -> None:
@@ -409,88 +372,7 @@ async def start_settings_dialog(message: Message, username: str) -> None:
     await message.answer(
         "⚙️ Давай настроим VPN! Опиши устройство и платформу, чтобы я подготовил инструкцию.\n"
         "Если захочешь выйти из режима настроек — напиши «выход».",
-        reply_markup=OPEN_MENU_KEYBOARD,
     )
-
-
-def _chat_id_from_callback(callback: CallbackQuery) -> int | None:
-    if callback.message:
-        return callback.message.chat.id
-    if callback.from_user:
-        return callback.from_user.id
-    return None
-
-
-async def _ensure_menu_markup(callback: CallbackQuery, markup: InlineKeyboardMarkup) -> None:
-    if callback.message:
-        try:
-            await callback.message.edit_reply_markup(markup)
-            return
-        except TelegramBadRequest as error:
-            if "message is not modified" in str(error).lower():
-                return
-        await callback.message.answer("📋 Меню: ", reply_markup=markup)
-    elif callback.from_user:
-        await bot.send_message(callback.from_user.id, "📋 Меню: ", reply_markup=markup)
-
-
-@dp.callback_query(F.data == "menu:open")
-async def menu_open(callback: CallbackQuery):
-    await callback.answer()
-    await _ensure_menu_markup(callback, MENU_KEYBOARD)
-
-
-@dp.callback_query(F.data == "menu:close")
-async def menu_close(callback: CallbackQuery):
-    await callback.answer()
-    await _ensure_menu_markup(callback, OPEN_MENU_KEYBOARD)
-
-
-@dp.callback_query(F.data == "menu:mykey")
-async def menu_mykey(callback: CallbackQuery):
-    chat_id = _chat_id_from_callback(callback)
-    if chat_id is None or callback.from_user is None:
-        await callback.answer("Не удалось определить чат", show_alert=True)
-        return
-    await callback.answer()
-    await _ensure_menu_markup(callback, MENU_KEYBOARD)
-    username = save_user(callback.from_user, chat_id)
-    if not callback.message:
-        await bot.send_message(chat_id, "ℹ️ Меню доступно в чате.", reply_markup=OPEN_MENU_KEYBOARD)
-        return
-    await send_key_status(callback.message, username)
-
-
-@dp.callback_query(F.data == "menu:renew")
-async def menu_renew(callback: CallbackQuery):
-    chat_id = _chat_id_from_callback(callback)
-    if chat_id is None or callback.from_user is None:
-        await callback.answer("Не удалось определить чат", show_alert=True)
-        return
-    await callback.answer()
-    await _ensure_menu_markup(callback, MENU_KEYBOARD)
-    username = save_user(callback.from_user, chat_id)
-    if not callback.message:
-        await bot.send_message(chat_id, "ℹ️ Меню доступно в чате.", reply_markup=OPEN_MENU_KEYBOARD)
-        return
-    await renew_vpn_key(callback.message, username)
-
-
-@dp.callback_query(F.data == "menu:settings")
-async def menu_settings(callback: CallbackQuery):
-    chat_id = _chat_id_from_callback(callback)
-    if chat_id is None or callback.from_user is None:
-        await callback.answer("Не удалось определить чат", show_alert=True)
-        return
-    await callback.answer()
-    await _ensure_menu_markup(callback, MENU_KEYBOARD)
-    username = save_user(callback.from_user, chat_id)
-    if not callback.message:
-        await bot.send_message(chat_id, "ℹ️ Меню доступно в чате.", reply_markup=OPEN_MENU_KEYBOARD)
-        return
-    await start_settings_dialog(callback.message, username)
-
-
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
     username = save_user(message.from_user, message.chat.id)
@@ -499,9 +381,9 @@ async def start_cmd(message: Message):
         f"Я — AI-ассистент <b>VPN_GPT</b>.\n"
         "Помогу подобрать VPN и мгновенно выдать демо-ключ.\n"
         "⚙️ Пока тестовый период — бесплатно.\n\n"
-        "Нажми «Открыть меню» ниже или просто напиши, что нужно 👇"
+        "Просто напиши, что нужно. Доступные команды: /buy, /mykey, /renew, /settings."
     )
-    await message.answer(text, reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer(text)
     await issue_and_send_key(message, username)
 
 
@@ -533,18 +415,18 @@ async def settings_cmd(message: Message):
 async def admin_cmd(message: Message):
     username = save_user(message.from_user, message.chat.id)
     if not ADMIN_ID or str(message.from_user.id) != str(ADMIN_ID):
-        await message.answer("⛔️ Эта команда доступна только администратору.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⛔️ Эта команда доступна только администратору.")
         return
 
     try:
         users_payload = await vpn_api.list_users()
     except VPNAPIError as api_error:
         logging.warning("Не удалось получить список пользователей", extra={"error": api_error.code})
-        await message.answer("⚠️ Не получилось получить статистику. Попробуй позже.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⚠️ Не получилось получить статистику. Попробуй позже.")
         return
     except Exception:
         logging.exception("Сбой при запросе списка пользователей", extra={"username": username})
-        await message.answer("⚠️ Произошла ошибка. Попробуй ещё раз позднее.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⚠️ Произошла ошибка. Попробуй ещё раз позднее.")
         return
 
     users = users_payload.get("users", [])
@@ -555,7 +437,7 @@ async def admin_cmd(message: Message):
         f"Всего записей: {total}\n"
         f"Активных ключей: {active_links}"
     )
-    await message.answer(text, reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer(text)
 
 @dp.message()
 async def handle_message(message: Message):
@@ -568,13 +450,18 @@ async def handle_message(message: Message):
     if is_settings_mode and normalized in {"выход", "назад", "стоп", "выйти"}:
         SETTINGS_SESSIONS.discard(message.chat.id)
         await message.answer(
-            "⚙️ Диалог настроек завершён. Если понадобится снова — выбери пункт «Настройки».",
-            reply_markup=OPEN_MENU_KEYBOARD,
+            "⚙️ Диалог настроек завершён. Если понадобится снова — напиши «настройки».",
         )
         return
 
     if normalized in {"/menu", "menu", "меню"}:
-        await message.answer("📋 Меню доступно ниже.", reply_markup=MENU_KEYBOARD)
+        await message.answer(
+            "📋 Доступные команды:\n"
+            "• /buy — выдать демо-ключ\n"
+            "• /mykey — показать текущий ключ\n"
+            "• /renew — продлить подписку\n"
+            "• /settings — помочь с настройкой VPN"
+        )
         return
 
     if normalized in {"/buy", "buy", "получить vpn", "получить доступ"}:
@@ -598,7 +485,7 @@ async def handle_message(message: Message):
         return
 
     # Визуальный отклик — бот «думает»
-    await message.answer("✉️ Обрабатываю запрос...", reply_markup=OPEN_MENU_KEYBOARD)
+    await message.answer("✉️ Обрабатываю запрос...")
 
     try:
         system_prompt = (
@@ -620,12 +507,12 @@ async def handle_message(message: Message):
             ]
         )
         gpt_reply = completion.choices[0].message.content.strip()
-        await message.answer(gpt_reply, reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer(gpt_reply)
         logging.info(f"GPT ответил @{username}: {gpt_reply}")
 
     except Exception as e:
         logging.error(f"Ошибка GPT при ответе @{username}: {e}")
-        await message.answer("⚠️ Произошла ошибка при обращении к AI. Попробуй позже.", reply_markup=OPEN_MENU_KEYBOARD)
+        await message.answer("⚠️ Произошла ошибка при обращении к AI. Попробуй позже.")
 
 # === Запуск ===
 async def main():
