@@ -297,3 +297,94 @@ def test_auto_update_adds_trial_column(tmp_path):
         assert row["trial"] == 0
     finally:
         con.close()
+
+
+def test_issue_key_auto_migrates_missing_trial_column(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "VLESS_HOST=test.example",
+                "VLESS_PORT=2053",
+                "BOT_PAYMENT_URL=https://vpn-gpt.store/pay",
+                "TRIAL_DAYS=3",
+                "PLANS=1m:180,3m:450",
+                "ADMIN_TOKEN=secret",
+                "INTERNAL_TOKEN=service",
+                "REFERRAL_BONUS_DAYS=30",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ENV_PATH", str(env_path))
+    monkeypatch.setenv("DATABASE", str(db_path))
+    monkeypatch.setenv("BOT_TOKEN", "test-token")
+
+    with sqlite3.connect(db_path) as con:
+        con.executescript(
+            """
+            CREATE TABLE tg_users (
+              username  TEXT PRIMARY KEY,
+              chat_id   INTEGER NOT NULL,
+              referrer  TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE vpn_keys (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL,
+              chat_id INTEGER,
+              uuid TEXT NOT NULL UNIQUE,
+              link TEXT NOT NULL,
+              label TEXT,
+              country TEXT,
+              active INTEGER NOT NULL DEFAULT 1,
+              issued_at TEXT NOT NULL,
+              expires_at TEXT NOT NULL
+            );
+            """
+        )
+
+    import api.config as config_module
+    import importlib
+
+    importlib.reload(config_module)
+    import api.utils.db as db_module
+
+    importlib.reload(db_module)
+
+    import api.endpoints.security as security_module
+
+    importlib.reload(security_module)
+
+    import api.main as api_main
+
+    importlib.reload(api_main)
+
+    app = FastAPI()
+    app.include_router(api_main.vpn.router)
+    app.include_router(api_main.users.router)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/vpn/issue_key",
+            json={"username": "legacy_user", "chat_id": 99},
+            headers=auth_headers(),
+        )
+    finally:
+        client.close()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["trial"] is True
+
+    with sqlite3.connect(db_path) as con:
+        cur = con.execute("PRAGMA table_info(vpn_keys)")
+        columns = {row[1] for row in cur.fetchall()}
+
+    assert "trial" in columns

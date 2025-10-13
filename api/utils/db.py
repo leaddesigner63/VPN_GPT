@@ -5,7 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
+from typing import Callable, Iterable, Iterator, Sequence, TypeVar
 
 from api.utils.logging import get_logger
 
@@ -16,6 +16,30 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logger = get_logger("db")
 MIGRATION_ERROR: tuple[Path, Exception] | None = None
+T = TypeVar("T")
+
+
+def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
+    message = str(error).lower()
+    if "no such column" not in message:
+        return False
+    for column in ("trial", "active"):
+        if column in message:
+            return True
+    return False
+
+
+def _run_with_schema_retry(operation: Callable[[], T]) -> T:
+    try:
+        return operation()
+    except sqlite3.OperationalError as exc:
+        if not _needs_schema_repair(exc):
+            raise
+        logger.warning(
+            "Database schema mismatch detected; attempting automatic migration", extra={"error": str(exc)}
+        )
+        auto_update_missing_fields()
+        return operation()
 
 INIT_SQL = """
 CREATE TABLE IF NOT EXISTS assistant_threads (
@@ -224,23 +248,29 @@ def get_user_referrer(username: str) -> str | None:
 
 
 def user_has_trial(username: str) -> bool:
-    with connect() as con:
-        cur = con.execute(
-            "SELECT 1 FROM vpn_keys WHERE username=? AND trial=1",
-            (normalise_username(username),),
-        )
-        row = cur.fetchone()
-    return row is not None
+    def _operation() -> bool:
+        with connect() as con:
+            cur = con.execute(
+                "SELECT 1 FROM vpn_keys WHERE username=? AND trial=1",
+                (normalise_username(username),),
+            )
+            row = cur.fetchone()
+        return row is not None
+
+    return _run_with_schema_retry(_operation)
 
 
 def get_active_key(username: str) -> dict | None:
-    with connect() as con:
-        cur = con.execute(
-            "SELECT * FROM vpn_keys WHERE username=? AND active=1 ORDER BY expires_at DESC LIMIT 1",
-            (normalise_username(username),),
-        )
-        row = cur.fetchone()
-    return _row_to_dict(row)
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute(
+                "SELECT * FROM vpn_keys WHERE username=? AND active=1 ORDER BY expires_at DESC LIMIT 1",
+                (normalise_username(username),),
+            )
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    return _run_with_schema_retry(_operation)
 
 
 def get_key_by_uuid(uuid_value: str) -> dict | None:
@@ -274,41 +304,50 @@ def create_vpn_key(
     username = normalise_username(username)
     issued_at = _utcnow().isoformat()
     expires_iso = expires_at.replace(microsecond=0).isoformat()
-    with connect() as con:
-        cur = con.execute(
-            """
-            INSERT INTO vpn_keys (username, chat_id, uuid, link, label, country, trial, active, issued_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-            """,
-            (username, chat_id, uuid_value, link, label, country, int(trial), issued_at, expires_iso),
-        )
-        key_id = cur.lastrowid
+
+    def _operation() -> dict:
+        with connect() as con:
+            cur = con.execute(
+                """
+                INSERT INTO vpn_keys (username, chat_id, uuid, link, label, country, trial, active, issued_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (username, chat_id, uuid_value, link, label, country, int(trial), issued_at, expires_iso),
+            )
+            key_id = cur.lastrowid
+        return {
+            "id": key_id,
+            "username": username,
+            "chat_id": chat_id,
+            "uuid": uuid_value,
+            "link": link,
+            "label": label,
+            "country": country,
+            "trial": trial,
+            "active": True,
+            "issued_at": issued_at,
+            "expires_at": expires_iso,
+        }
+
+    payload = _run_with_schema_retry(_operation)
     logger.info(
         "Created VPN key",
         extra={"username": username, "uuid": uuid_value, "expires_at": expires_iso, "trial": trial},
     )
-    return {
-        "id": key_id,
-        "username": username,
-        "chat_id": chat_id,
-        "uuid": uuid_value,
-        "link": link,
-        "label": label,
-        "country": country,
-        "trial": trial,
-        "active": True,
-        "issued_at": issued_at,
-        "expires_at": expires_iso,
-    }
+    return payload
 
 
 def update_key_expiry(uuid_value: str, expires_at: datetime) -> None:
     expires_iso = expires_at.replace(microsecond=0).isoformat()
-    with connect() as con:
-        con.execute(
-            "UPDATE vpn_keys SET expires_at=?, active=1 WHERE uuid=?",
-            (expires_iso, uuid_value),
-        )
+
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                "UPDATE vpn_keys SET expires_at=?, active=1 WHERE uuid=?",
+                (expires_iso, uuid_value),
+            )
+
+    _run_with_schema_retry(_operation)
     logger.info("Updated key expiry", extra={"uuid": uuid_value, "expires_at": expires_iso})
 
 
