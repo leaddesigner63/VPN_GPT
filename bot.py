@@ -38,7 +38,12 @@ SYSTEM_PROMPT = os.getenv(
     "Ты — VPN_GPT, эксперт по VPN. Отвечай дружелюбно, кратко и по делу.",
 )
 MAX_HISTORY_MESSAGES = int(os.getenv("GPT_HISTORY_MESSAGES", "6"))
-VPN_API_URL = os.getenv("VPN_API_URL", "http://localhost:8000")
+# FastAPI backend обслуживает бота на порту 8080 согласно документации.
+# Ранее значение по умолчанию указывало на 8000, из-за чего при отсутствии
+# переменной окружения бот безуспешно подключался к несуществующему сервису и
+# падал с httpx.ConnectError. Для надёжности явно указываем IPv4-хост, чтобы
+# избежать попыток соединения по IPv6, которые могут быть недоступны в проде.
+VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8080")
 SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
 BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "0"))
