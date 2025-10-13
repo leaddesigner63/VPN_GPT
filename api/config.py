@@ -13,11 +13,14 @@ logger = get_logger("config")
 _BASE_DIR = Path(__file__).resolve().parents[2]
 _ENV_PATH = Path(os.getenv("ENV_PATH", _BASE_DIR / ".env"))
 
-if not _ENV_PATH.exists():
-    logger.error(".env file is missing", extra={"path": str(_ENV_PATH)})
-    raise RuntimeError(f".env не найден по пути {_ENV_PATH}")
-
-load_dotenv(str(_ENV_PATH), override=True)
+if _ENV_PATH.exists():
+    load_dotenv(str(_ENV_PATH), override=True)
+    logger.info("Loaded environment variables from file", extra={"path": str(_ENV_PATH)})
+else:
+    logger.warning(
+        ".env file is missing; relying on existing environment variables",
+        extra={"path": str(_ENV_PATH)},
+    )
 
 
 def require_env(name: str) -> str:
@@ -26,7 +29,11 @@ def require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
         logger.error("Required environment variable is missing", extra={"name": name})
-        raise RuntimeError(f"Переменная окружения {name} не задана в {_ENV_PATH}")
+        raise RuntimeError(
+            "Переменная окружения {name} не задана. "
+            "Создайте файл {env} или установите переменную в окружении."
+            .format(name=name, env=_ENV_PATH)
+        )
     logger.debug("Loaded environment variable", extra={"name": name})
     return value.strip()
 
