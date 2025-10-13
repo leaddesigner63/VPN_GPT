@@ -23,7 +23,7 @@ def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
     if "no such column" not in message:
         return False
-    for column in ("trial", "active"):
+    for column in ("trial", "active", "label"):
         if column in message:
             return True
     return False
@@ -481,7 +481,10 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
     try:
         with connect(db_path=resolved) as con:
             columns = _table_columns(con, "vpn_keys")
-            if columns and "trial" not in columns:
+            if not columns:
+                return
+
+            if "trial" not in columns:
                 logger.warning(
                     "Adding missing 'trial' column to vpn_keys table", extra={"path": str(resolved)}
                 )
@@ -490,6 +493,26 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
                 )
                 logger.info(
                     "Successfully added 'trial' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+
+            if "active" not in columns:
+                logger.warning(
+                    "Adding missing 'active' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute(
+                    "ALTER TABLE vpn_keys ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+                )
+                logger.info(
+                    "Successfully added 'active' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+
+            if "label" not in columns:
+                logger.warning(
+                    "Adding missing 'label' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute("ALTER TABLE vpn_keys ADD COLUMN label TEXT")
+                logger.info(
+                    "Successfully added 'label' column to vpn_keys table", extra={"path": str(resolved)}
                 )
     except Exception as exc:  # pragma: no cover - defensive
         MIGRATION_ERROR = (resolved, exc)
