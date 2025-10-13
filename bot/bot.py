@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from typing import Any
 from urllib.parse import urlparse
@@ -18,10 +19,35 @@ from aiogram.types import (
 from config import BOT_TOKEN
 from utils.qrgen import make_qr
 
+logger = logging.getLogger("vpn_gpt.simple_bot")
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-VPN_API_URL = os.getenv("VPN_API_URL", "https://vpn-gpt.store/api")
+
+def _load_api_urls() -> list[str]:
+    raw_urls = os.getenv("VPN_API_URLS")
+    if raw_urls:
+        urls = [chunk.strip() for chunk in raw_urls.split(",") if chunk.strip()]
+    else:
+        single = os.getenv("VPN_API_URL")
+        urls = [single.strip()] if single else []
+
+    if not urls:
+        urls = ["https://vpn-gpt.store/api", "http://127.0.0.1:8080"]
+
+    normalized: list[str] = []
+    for url in urls:
+        if url:
+            normalized.append(url.rstrip("/"))
+
+    if not normalized:
+        raise RuntimeError("Не удалось определить адреса API для VPN_GPT")
+
+    return normalized
+
+
+_VPN_API_URLS = _load_api_urls()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 RENEW_DAYS = int(os.getenv("VPN_RENEW_DAYS", "30"))
 _ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
@@ -102,42 +128,73 @@ def format_key_info(payload: dict[str, Any], username: str, title: str) -> tuple
     return "\n".join(lines), link
 
 
+async def _api_request(
+    method: str,
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json_payload: dict[str, Any] | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    last_error: httpx.RequestError | None = None
+
+    for base_url in _VPN_API_URLS:
+        url = f"{base_url}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_payload,
+                )
+        except httpx.RequestError as exc:
+            last_error = exc
+            logger.warning(
+                "Failed to call VPN API",
+                extra={
+                    "url": url,
+                    "method": method,
+                    "error": str(exc),
+                },
+            )
+            continue
+
+        response.raise_for_status()
+        return response.json()
+
+    if last_error is None:
+        raise RuntimeError("Не удалось выполнить запрос к VPN API: не задан ни один адрес")
+
+    raise last_error
+
+
 async def request_key(username: str) -> dict:
     params = {"x-admin-token": ADMIN_TOKEN} if ADMIN_TOKEN else None
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{VPN_API_URL.rstrip('/')}/vpn/issue_key",
-            params=params,
-            json={"username": username},
-        )
-    response.raise_for_status()
-    return response.json()
+    return await _api_request(
+        "POST",
+        "/vpn/issue_key",
+        params=params,
+        json_payload={"username": username},
+    )
 
 
 async def renew_key(username: str, days: int = RENEW_DAYS) -> dict:
     params = {"x-admin-token": ADMIN_TOKEN} if ADMIN_TOKEN else None
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{VPN_API_URL.rstrip('/')}/vpn/renew_key",
-            params=params,
-            json={"username": username, "days": days},
-        )
-    response.raise_for_status()
-    return response.json()
+    return await _api_request(
+        "POST",
+        "/vpn/renew_key",
+        params=params,
+        json_payload={"username": username, "days": days},
+    )
 
 
 async def request_key_info(username: str, chat_id: int | None = None) -> dict:
-    params = {"username": username}
+    params: dict[str, Any] = {"username": username}
     if chat_id is not None:
         params["chat_id"] = chat_id
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(
-            f"{VPN_API_URL.rstrip('/')}/vpn/my_key",
-            params=params,
-        )
-    response.raise_for_status()
-    return response.json()
+    return await _api_request("GET", "/vpn/my_key", params=params)
 
 
 @dp.message(Command("start"))
