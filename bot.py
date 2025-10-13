@@ -70,7 +70,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
 def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     if link:
-        buttons.append([InlineKeyboardButton(text="📋 Скопировать ссылку", copy_text=link)])
+        buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=link)])
     buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="show_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
