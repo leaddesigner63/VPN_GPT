@@ -51,7 +51,10 @@ async def start(msg: Message):
         "👋 Привет! Я бот VPN_GPT. Сейчас тестовый период — ключи выдаются бесплатно.",
         reply_markup=KEYBOARD_REMOVE,
     )
-    await buy(msg)
+    await msg.answer(
+        "Чтобы получить ключ, отправь команду /buy. Если ключ уже есть, воспользуйся /mykey.",
+        reply_markup=KEYBOARD_REMOVE,
+    )
 
 
 @dp.message(Command("buy"))
