@@ -303,6 +303,14 @@ def issue_vpn_key(payload: IssueKeyRequest) -> IssueKeyResponse:
     if days <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_days")
 
+    existing_key = _get_active_key(username)
+    if existing_key:
+        logger.info(
+            "Active VPN key already exists; refusing to issue a new one",
+            extra={"username": username, "uuid": existing_key.get("uuid")},
+        )
+        return _json_error("user_has_active_key", status.HTTP_409_CONFLICT)
+
     issued_at = dt.datetime.now(dt.UTC)
     expires_at = issued_at + dt.timedelta(days=days)
     uuid_value = str(uuid.uuid4())

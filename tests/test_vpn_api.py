@@ -146,7 +146,7 @@ def test_issue_key_accepts_x_admin_header(test_app):
     assert body["username"] == "bianca"
 
 
-def test_issue_key_updates_existing_user(test_app):
+def test_issue_key_rejects_user_with_active_key(test_app):
     client, db_module, add_recorder, _ = test_app
 
     first = client.post(
@@ -161,15 +161,13 @@ def test_issue_key_updates_existing_user(test_app):
     )
 
     assert first.status_code == 200
-    assert second.status_code == 200
+    assert second.status_code == 409
+    assert second.json() == {"ok": False, "error": "user_has_active_key"}
 
-    first_uuid = first.json()["uuid"]
-    second_uuid = second.json()["uuid"]
+    assert len(add_recorder.calls) == 1
 
-    assert first_uuid != second_uuid
-    assert len(add_recorder.calls) == 2
     record = _fetch_record(db_module, "charlie")
-    assert record["uuid"] == second_uuid
+    assert record["uuid"] == first.json()["uuid"]
 
 
 def test_issue_key_activation_sequence(test_app, monkeypatch):
