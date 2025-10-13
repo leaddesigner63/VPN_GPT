@@ -6,6 +6,7 @@ import logging
 import os
 from collections import deque
 from typing import Any, Deque, Dict, List
+from urllib.parse import urlparse
 
 import httpx
 from aiogram import Bot, Dispatcher, F
@@ -37,6 +38,7 @@ MAX_HISTORY_MESSAGES = int(os.getenv("GPT_HISTORY_MESSAGES", "6"))
 VPN_API_URL = os.getenv("VPN_API_URL", "https://vpn-gpt.store/api")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 RENEW_DAYS = int(os.getenv("VPN_RENEW_DAYS", "30"))
+_ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
@@ -67,10 +69,36 @@ def build_main_menu() -> InlineKeyboardMarkup:
     )
 
 
+def _is_supported_button_link(link: str) -> bool:
+    """Return True when link is safe to use as a Telegram button URL."""
+
+    if not link:
+        return False
+
+    try:
+        parsed = urlparse(link)
+    except ValueError:
+        return False
+
+    if parsed.scheme not in _ALLOWED_BUTTON_SCHEMES:
+        return False
+
+    if parsed.scheme in {"http", "https"}:
+        return bool(parsed.netloc)
+
+    # Telegram-specific deeplinks (tg://) may rely on path, netloc or query params.
+    if parsed.scheme == "tg":
+        return bool(parsed.path or parsed.netloc or parsed.query)
+
+    return False
+
+
 def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     if link:
-        buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=link)])
+        normalized_link = link.strip()
+        if normalized_link and _is_supported_button_link(normalized_link):
+            buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)])
     buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="show_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
