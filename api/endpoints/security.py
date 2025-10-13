@@ -18,7 +18,10 @@ def require_service_token(
     valid_tokens = {token for token in (ADMIN_TOKEN, INTERNAL_TOKEN) if token}
     if not valid_tokens:
         logger.error("Service tokens are not configured")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="token_not_configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="service_token_not_configured",
+        )
 
     presented: list[str] = []
     if authorization:
