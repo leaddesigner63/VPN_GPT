@@ -11,7 +11,13 @@ from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BufferedInputFile, Message, User
+from aiogram.types import (
+    BufferedInputFile,
+    MenuButtonDefault,
+    Message,
+    ReplyKeyboardRemove,
+    User,
+)
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -189,6 +195,20 @@ SETTINGS_SYSTEM_PROMPT = (
     " Будь дружелюбен и отвечай по-русски."
 )
 
+KEYBOARD_REMOVE = ReplyKeyboardRemove()
+
+
+async def clear_bot_menu() -> None:
+    """Удаляет кастомное меню и визуальные команды у бота."""
+
+    try:
+        await bot.delete_my_commands()
+        await bot.set_chat_menu_button(MenuButtonDefault())
+    except Exception:
+        logging.exception("Не удалось очистить меню бота от визуальных кнопок")
+    else:
+        logging.info("Меню бота очищено от визуальных кнопок")
+
 # === База данных ===
 def ensure_tables() -> None:
     """Подготовка БД под требования API и бота."""
@@ -230,14 +250,14 @@ def save_user(user: User, chat_id: int):
 
 # === Обработчики ===
 async def issue_and_send_key(message: Message, username: str) -> None:
-    await message.answer("⏳ Создаю тебе VPN-ключ…")
+    await message.answer("⏳ Создаю тебе VPN-ключ…", reply_markup=KEYBOARD_REMOVE)
 
     if KEY_ISSUE_LIMIT and KEY_ISSUE_LIMIT > 0:
         if not ADMIN_TOKEN:
             logger.error(
                 "Включён лимит выдачи ключей, но ADMIN_TOKEN не задан", extra={"username": username}
             )
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
             return
 
         try:
@@ -247,17 +267,17 @@ async def issue_and_send_key(message: Message, username: str) -> None:
                 "Не удалось проверить лимит выдачи ключей",
                 extra={"username": username, "error": api_error.code, "status": api_error.status},
             )
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
             return
         except Exception:
             logger.exception("Сбой при проверке лимита выдачи ключей", extra={"username": username})
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
             return
 
         users_payload = stats.get("users") if isinstance(stats, dict) else None
         if not isinstance(users_payload, list):
             logger.warning("Некорректный ответ API при проверке лимита", extra={"payload": stats})
-            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE)
+            await message.answer(KEY_LIMIT_CHECK_FAILED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
             return
 
         if should_block_issue(users_payload, username, KEY_ISSUE_LIMIT):
@@ -265,7 +285,7 @@ async def issue_and_send_key(message: Message, username: str) -> None:
                 "Достигнут лимит выдачи ключей",
                 extra={"limit": KEY_ISSUE_LIMIT, "username": username},
             )
-            await message.answer(KEY_LIMIT_REACHED_MESSAGE)
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
             return
     try:
         vpn_key = await vpn_api.issue_key(username)
@@ -277,24 +297,32 @@ async def issue_and_send_key(message: Message, username: str) -> None:
         if api_error.code in {"user_has_active_key", "duplicate"}:
             await message.answer(
                 "ℹ️ У тебя уже есть активный VPN-ключ. Проверь предыдущие сообщения или напиши «продлить подписку».",
+                reply_markup=KEYBOARD_REMOVE,
             )
         elif api_error.code == "invalid_days":
-            await message.answer("⚠️ Некорректный срок действия ключа.")
+            await message.answer("⚠️ Некорректный срок действия ключа.", reply_markup=KEYBOARD_REMOVE)
         elif "limit" in error_code or "quota" in error_code:
-            await message.answer(KEY_LIMIT_REACHED_MESSAGE)
+            await message.answer(KEY_LIMIT_REACHED_MESSAGE, reply_markup=KEYBOARD_REMOVE)
         else:
             status_info = f" (код {api_error.status})" if api_error.status else ""
-            await message.answer("⚠️ Не получилось создать ключ. Попробуй ещё раз позже." + status_info)
+            await message.answer(
+                "⚠️ Не получилось создать ключ. Попробуй ещё раз позже." + status_info,
+                reply_markup=KEYBOARD_REMOVE,
+            )
         return
     except Exception:
         logging.exception("Сбой при выдаче VPN-ключа", extra={"username": username})
-        await message.answer("⚠️ Не получилось создать ключ. Попробуй ещё раз чуть позже.")
+        await message.answer(
+            "⚠️ Не получилось создать ключ. Попробуй ещё раз чуть позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
 
     await message.answer(
         "🎁 Твой бесплатный VPN-ключ готов!\n\n"
         f"🔗 Ссылка:\n{vpn_key.link}\n"
         f"⏳ Действует до: {vpn_key.expires_at}",
+        reply_markup=KEYBOARD_REMOVE,
     )
 
     qr_stream = make_qr(vpn_key.link)
@@ -305,7 +333,7 @@ async def issue_and_send_key(message: Message, username: str) -> None:
 
 
 async def renew_vpn_key(message: Message, username: str) -> None:
-    await message.answer("♻️ Продляю твою подписку…")
+    await message.answer("♻️ Продляю твою подписку…", reply_markup=KEYBOARD_REMOVE)
     try:
         info = await vpn_api.renew_key(username)
     except VPNAPIError as api_error:
@@ -315,22 +343,30 @@ async def renew_vpn_key(message: Message, username: str) -> None:
         if api_error.code == "user_not_found":
             await message.answer(
                 "⚠️ Активный ключ не найден. Напиши «мой ключ», чтобы оформить новую подписку.",
+                reply_markup=KEYBOARD_REMOVE,
             )
             await issue_and_send_key(message, username)
         elif api_error.code == "invalid_days":
-            await message.answer("⚠️ Некорректный срок продления.")
+            await message.answer("⚠️ Некорректный срок продления.", reply_markup=KEYBOARD_REMOVE)
         else:
             status_info = f" (код {api_error.status})" if api_error.status else ""
-            await message.answer("⚠️ Не получилось продлить ключ." + status_info)
+            await message.answer(
+                "⚠️ Не получилось продлить ключ." + status_info,
+                reply_markup=KEYBOARD_REMOVE,
+            )
         return
     except Exception:
         logging.exception("Сбой при продлении VPN-ключа", extra={"username": username})
-        await message.answer("⚠️ Произошла ошибка при продлении. Попробуй снова позже.")
+        await message.answer(
+            "⚠️ Произошла ошибка при продлении. Попробуй снова позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
 
     await message.answer(
         "✅ Ключ успешно продлён!\n"
         f"Новый срок действия до: {info.expires_at}",
+        reply_markup=KEYBOARD_REMOVE,
     )
 
 
@@ -342,16 +378,23 @@ async def send_key_status(message: Message, username: str) -> None:
             "Не удалось получить статус ключа",
             extra={"username": username, "error": api_error.code, "status": api_error.status},
         )
-        await message.answer("⚠️ Не удалось получить информацию о ключе. Попробуй позже.")
+        await message.answer(
+            "⚠️ Не удалось получить информацию о ключе. Попробуй позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
     except Exception:
         logging.exception("Сбой при запросе статуса ключа", extra={"username": username})
-        await message.answer("⚠️ Произошла ошибка. Попробуй снова позже.")
+        await message.answer(
+            "⚠️ Произошла ошибка. Попробуй снова позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
 
     if not payload.get("ok"):
         await message.answer(
             "ℹ️ Активный ключ не найден. Напиши «мой ключ», чтобы оформить новую подписку.",
+            reply_markup=KEYBOARD_REMOVE,
         )
         return
 
@@ -364,7 +407,7 @@ async def send_key_status(message: Message, username: str) -> None:
         f"Ссылка: {link}\n"
         f"Действует до: {expires}"
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=KEYBOARD_REMOVE)
 
 
 async def start_settings_dialog(message: Message, username: str) -> None:
@@ -372,6 +415,7 @@ async def start_settings_dialog(message: Message, username: str) -> None:
     await message.answer(
         "⚙️ Давай настроим VPN! Опиши устройство и платформу, чтобы я подготовил инструкцию.\n"
         "Если захочешь выйти из режима настроек — напиши «выход».",
+        reply_markup=KEYBOARD_REMOVE,
     )
 @dp.message(CommandStart())
 async def start_cmd(message: Message):
@@ -383,7 +427,7 @@ async def start_cmd(message: Message):
         "⚙️ Пока тестовый период — бесплатно.\n\n"
         "Просто напиши, что нужно. Доступные команды: /buy, /mykey, /renew, /settings."
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=KEYBOARD_REMOVE)
     await issue_and_send_key(message, username)
 
 
@@ -415,18 +459,24 @@ async def settings_cmd(message: Message):
 async def admin_cmd(message: Message):
     username = save_user(message.from_user, message.chat.id)
     if not ADMIN_ID or str(message.from_user.id) != str(ADMIN_ID):
-        await message.answer("⛔️ Эта команда доступна только администратору.")
+        await message.answer("⛔️ Эта команда доступна только администратору.", reply_markup=KEYBOARD_REMOVE)
         return
 
     try:
         users_payload = await vpn_api.list_users()
     except VPNAPIError as api_error:
         logging.warning("Не удалось получить список пользователей", extra={"error": api_error.code})
-        await message.answer("⚠️ Не получилось получить статистику. Попробуй позже.")
+        await message.answer(
+            "⚠️ Не получилось получить статистику. Попробуй позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
     except Exception:
         logging.exception("Сбой при запросе списка пользователей", extra={"username": username})
-        await message.answer("⚠️ Произошла ошибка. Попробуй ещё раз позднее.")
+        await message.answer(
+            "⚠️ Произошла ошибка. Попробуй ещё раз позднее.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
         return
 
     users = users_payload.get("users", [])
@@ -437,7 +487,7 @@ async def admin_cmd(message: Message):
         f"Всего записей: {total}\n"
         f"Активных ключей: {active_links}"
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=KEYBOARD_REMOVE)
 
 @dp.message()
 async def handle_message(message: Message):
@@ -451,6 +501,7 @@ async def handle_message(message: Message):
         SETTINGS_SESSIONS.discard(message.chat.id)
         await message.answer(
             "⚙️ Диалог настроек завершён. Если понадобится снова — напиши «настройки».",
+            reply_markup=KEYBOARD_REMOVE,
         )
         return
 
@@ -460,7 +511,8 @@ async def handle_message(message: Message):
             "• /buy — выдать демо-ключ\n"
             "• /mykey — показать текущий ключ\n"
             "• /renew — продлить подписку\n"
-            "• /settings — помочь с настройкой VPN"
+            "• /settings — помочь с настройкой VPN",
+            reply_markup=KEYBOARD_REMOVE,
         )
         return
 
@@ -485,7 +537,7 @@ async def handle_message(message: Message):
         return
 
     # Визуальный отклик — бот «думает»
-    await message.answer("✉️ Обрабатываю запрос...")
+    await message.answer("✉️ Обрабатываю запрос...", reply_markup=KEYBOARD_REMOVE)
 
     try:
         system_prompt = (
@@ -507,16 +559,20 @@ async def handle_message(message: Message):
             ]
         )
         gpt_reply = completion.choices[0].message.content.strip()
-        await message.answer(gpt_reply)
+        await message.answer(gpt_reply, reply_markup=KEYBOARD_REMOVE)
         logging.info(f"GPT ответил @{username}: {gpt_reply}")
 
     except Exception as e:
         logging.error(f"Ошибка GPT при ответе @{username}: {e}")
-        await message.answer("⚠️ Произошла ошибка при обращении к AI. Попробуй позже.")
+        await message.answer(
+            "⚠️ Произошла ошибка при обращении к AI. Попробуй позже.",
+            reply_markup=KEYBOARD_REMOVE,
+        )
 
 # === Запуск ===
 async def main():
     ensure_tables()
+    await clear_bot_menu()
     logging.info("Бот VPN_GPT запущен и готов принимать сообщения.")
     await dp.start_polling(bot)
 
