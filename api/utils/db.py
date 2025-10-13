@@ -78,6 +78,20 @@ INDEX_SQL = (
 )
 
 
+def _table_exists(con: sqlite3.Connection, table: str) -> bool:
+    cur = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return cur.fetchone() is not None
+
+
+def _table_columns(con: sqlite3.Connection, table: str) -> set[str]:
+    if not _table_exists(con, table):
+        return set()
+    cur = con.execute(f"PRAGMA table_info({table})")
+    return {row["name"] for row in cur.fetchall()}
+
+
 @contextmanager
 def connect(*, autocommit: bool = True, db_path: Path | str | None = None) -> Iterator[sqlite3.Connection]:
     resolved = Path(db_path or DB_PATH)
@@ -419,11 +433,29 @@ def extend_active_key(username: str, *, days: int) -> dict | None:
 
 
 def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  # pragma: no cover - compatibility
-    """Backward compatible no-op to satisfy legacy callers."""
+    """Apply lightweight migrations to keep backward compatibility with older schemas."""
 
-    logger.debug(
-        "auto_update_missing_fields called", extra={"db_path": str(db_path or DB_PATH)}
-    )
+    resolved = Path(db_path or DB_PATH)
+    logger.info("Checking database schema for compatibility", extra={"path": str(resolved)})
+
+    global MIGRATION_ERROR
+    try:
+        with connect(db_path=resolved) as con:
+            columns = _table_columns(con, "vpn_keys")
+            if columns and "trial" not in columns:
+                logger.warning(
+                    "Adding missing 'trial' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute(
+                    "ALTER TABLE vpn_keys ADD COLUMN trial INTEGER NOT NULL DEFAULT 0"
+                )
+                logger.info(
+                    "Successfully added 'trial' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+    except Exception as exc:  # pragma: no cover - defensive
+        MIGRATION_ERROR = (resolved, exc)
+        logger.exception("Failed to apply database migrations", extra={"path": str(resolved)})
+        raise
 
 
 __all__ = [

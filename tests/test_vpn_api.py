@@ -183,3 +183,64 @@ def test_payment_confirmation_extends_subscription(api_app, configured_env):
     keys = _fetch_keys(configured_env.database, "eve")
     assert len(keys) == 1
     assert keys[0]["trial"] == 0
+
+
+def test_auto_update_adds_trial_column(tmp_path):
+    legacy_db = tmp_path / "legacy.db"
+    con = sqlite3.connect(legacy_db)
+    try:
+        con.execute(
+            """
+            CREATE TABLE vpn_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                chat_id INTEGER,
+                uuid TEXT NOT NULL UNIQUE,
+                link TEXT NOT NULL,
+                label TEXT,
+                country TEXT,
+                active INTEGER NOT NULL DEFAULT 1,
+                issued_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO vpn_keys (username, chat_id, uuid, link, label, country, active, issued_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                "legacy",
+                123,
+                "uuid-legacy",
+                "https://example.com",
+                "Legacy",
+                "US",
+                "2024-01-01T00:00:00",
+                "2024-02-01T00:00:00",
+            ),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    import api.utils.db as db_module
+
+    db_module.auto_update_missing_fields(db_path=legacy_db)
+
+    con = sqlite3.connect(legacy_db)
+    try:
+        con.row_factory = sqlite3.Row
+        columns = {
+            row["name"]
+            for row in con.execute("PRAGMA table_info(vpn_keys)").fetchall()
+        }
+        assert "trial" in columns
+
+        cur = con.execute("SELECT trial FROM vpn_keys WHERE username=?", ("legacy",))
+        row = cur.fetchone()
+        assert row is not None
+        assert row["trial"] == 0
+    finally:
+        con.close()
