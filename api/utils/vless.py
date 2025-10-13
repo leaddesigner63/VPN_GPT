@@ -10,6 +10,9 @@ logger = get_logger("utils.vless")
 
 
 def build_vless_link(uuid: str, username: str) -> str:
-    link = f"vless://{uuid}@{VLESS_HOST}:{VLESS_PORT}?encryption=none#{username}"
+    label = username.replace(" ", "_")
+    link = (
+        f"vless://{uuid}@{VLESS_HOST}:{VLESS_PORT}?type=tcp&security=none&encryption=none#{label}"
+    )
     logger.info("Constructed VLESS link", extra={"uuid": uuid, "username": username})
     return link

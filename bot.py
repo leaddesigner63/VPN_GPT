@@ -1,18 +1,20 @@
-"""Telegram bridge bot that proxies all user messages to GPT."""
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from collections import deque
-from typing import Any, Deque, Dict, List
-from urllib.parse import urlparse
+from collections import defaultdict, deque
+from typing import Any, Deque, Dict
+from urllib.parse import urlencode
 
 import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
@@ -23,172 +25,142 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 from openai import OpenAI
+
 from utils.qrgen import make_qr
 
-load_dotenv("/root/VPN_GPT/.env")
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GPT_API_KEY = os.getenv("GPT_API_KEY")
 GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-mini")
 SYSTEM_PROMPT = os.getenv(
     "GPT_SYSTEM_PROMPT",
-    "Ты — VPN_GPT, эксперт по VPN. Отвечай дружелюбно и помогай пользователю.",
+    "Ты — VPN_GPT, эксперт по VPN. Отвечай дружелюбно, кратко и по делу.",
 )
 MAX_HISTORY_MESSAGES = int(os.getenv("GPT_HISTORY_MESSAGES", "6"))
-VPN_API_URL = os.getenv("VPN_API_URL", "https://vpn-gpt.store/api")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
-RENEW_DAYS = int(os.getenv("VPN_RENEW_DAYS", "30"))
-_ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
+VPN_API_URL = os.getenv("VPN_API_URL", "http://localhost:8000")
+SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
+BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "0"))
+PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
+REFERRAL_BONUS_DAYS = int(os.getenv("REFERRAL_BONUS_DAYS", "30"))
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
 if not GPT_API_KEY:
     raise RuntimeError("GPT_API_KEY is not configured")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("vpn_gpt.bot")
 
+
+def _parse_plans(raw: str) -> Dict[str, int]:
+    plans: Dict[str, int] = {}
+    for chunk in raw.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" not in chunk:
+            continue
+        code, price = chunk.split(":", 1)
+        try:
+            plans[code.strip()] = int(price.strip())
+        except ValueError:
+            logger.warning("Invalid plan price", extra={"plan": chunk})
+    return plans or {"1m": 180, "3m": 450, "12m": 1450}
+
+
+PLANS = _parse_plans(PLAN_ENV)
+PLAN_ORDER = [code for code in ("1m", "3m", "12m") if code in PLANS] + [
+    code for code in PLANS.keys() if code not in {"1m", "3m", "12m"}
+]
+
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 client = OpenAI(api_key=GPT_API_KEY)
 
+
+class AiFlow(StatesGroup):
+    device = State()
+    goal = State()
+    priority = State()
+
+
 ConversationHistory = Deque[dict[str, str]]
-_histories: Dict[int, ConversationHistory] = {}
+_histories: Dict[int, ConversationHistory] = defaultdict(
+    lambda: deque(maxlen=MAX_HISTORY_MESSAGES * 2 if MAX_HISTORY_MESSAGES > 0 else None)
+)
+BOT_USERNAME: str | None = None
+
+
+MENU_QUICK = "menu_quick"
+MENU_AI = "menu_ai"
+MENU_KEYS = "menu_keys"
+MENU_PAY = "menu_pay"
+MENU_REF = "menu_ref"
+MENU_HELP = "menu_help"
+MENU_BACK = "menu_back"
+PAY_PLAN_PREFIX = "pay_plan:"
+CANCEL_AI = "ai_cancel"
 
 
 def build_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Получить новый ключ", callback_data="issue_key")],
-            [InlineKeyboardButton(text="♻️ Продлить доступ", callback_data="renew_key")],
-            [InlineKeyboardButton(text="📄 Мой ключ", callback_data="get_key")],
+            [InlineKeyboardButton(text="🚀 Быстрый старт", callback_data=MENU_QUICK)],
+            [InlineKeyboardButton(text="🧠 Подобрать с AI", callback_data=MENU_AI)],
+            [InlineKeyboardButton(text="🔑 Мои ключи", callback_data=MENU_KEYS)],
+            [InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)],
+            [InlineKeyboardButton(text="🤝 Рефералы", callback_data=MENU_REF)],
+            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP)],
         ]
     )
 
 
-def _is_supported_button_link(link: str) -> bool:
-    """Return True when link is safe to use as a Telegram button URL."""
+def build_back_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)]]
+    )
 
+
+def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for plan in PLAN_ORDER:
+        price = PLANS[plan]
+        params = {"u": username, "plan": plan}
+        if chat_id:
+            params["c"] = str(chat_id)
+        if ref:
+            params["r"] = ref
+        payment_url = f"{BOT_PAYMENT_URL}?{urlencode(params)}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{plan.upper()} · {price} ₽",
+                    url=payment_url,
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _is_supported_button_link(link: str) -> bool:
     if not link:
         return False
-
-    try:
-        parsed = urlparse(link)
-    except ValueError:
-        return False
-
-    if parsed.scheme not in _ALLOWED_BUTTON_SCHEMES:
-        return False
-
-    if parsed.scheme in {"http", "https"}:
-        return bool(parsed.netloc)
-
-    # Telegram-specific deeplinks (tg://) may rely on path, netloc or query params.
-    if parsed.scheme == "tg":
-        return bool(parsed.path or parsed.netloc or parsed.query)
-
-    return False
+    return link.startswith("http") or link.startswith("tg://")
 
 
 def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
-    if link:
-        normalized_link = link.strip()
-        if normalized_link and _is_supported_button_link(normalized_link):
-            buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)])
-    buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="show_menu")])
+    if link and _is_supported_button_link(link):
+        buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=link)])
+    buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def format_key_info(payload: dict[str, Any], username: str, title: str) -> tuple[str, str | None]:
-    lines: list[str] = [title]
-
-    payload_username = payload.get("username")
-    if payload_username:
-        lines.append(f"Пользователь: {payload_username}")
-    else:
-        lines.append(f"Пользователь: {username}")
-
-    uuid_value = payload.get("uuid")
-    if uuid_value:
-        lines.append(f"UUID: {uuid_value}")
-
-    expires = payload.get("expires_at")
-    if expires:
-        lines.append(f"Действует до: {expires}")
-
-    active = payload.get("active")
-    if active is not None:
-        status_text = "активен" if active else "неактивен"
-        lines.append(f"Статус: {status_text}")
-
-    link = payload.get("link")
-    if link:
-        lines.append("")
-        lines.append("🔗 Ссылка для подключения:")
-        lines.append(link)
-
-    return "\n".join(lines), link
-
-
-async def request_key(username: str) -> dict:
-    params = {"x-admin-token": ADMIN_TOKEN} if ADMIN_TOKEN else None
-    async with httpx.AsyncClient(timeout=10.0) as client_http:
-        response = await client_http.post(
-            f"{VPN_API_URL.rstrip('/')}/vpn/issue_key",
-            params=params,
-            json={"username": username},
-        )
-    response.raise_for_status()
-    return response.json()
-
-
-async def renew_key(username: str, days: int = RENEW_DAYS) -> dict:
-    params = {"x-admin-token": ADMIN_TOKEN} if ADMIN_TOKEN else None
-    async with httpx.AsyncClient(timeout=10.0) as client_http:
-        response = await client_http.post(
-            f"{VPN_API_URL.rstrip('/')}/vpn/renew_key",
-            params=params,
-            json={"username": username, "days": days},
-        )
-    response.raise_for_status()
-    return response.json()
-
-
-async def request_key_info(username: str, chat_id: int | None = None) -> dict:
-    params: dict[str, Any] = {"username": username}
-    if chat_id is not None:
-        params["chat_id"] = chat_id
-
-    async with httpx.AsyncClient(timeout=10.0) as client_http:
-        response = await client_http.get(
-            f"{VPN_API_URL.rstrip('/')}/vpn/my_key",
-            params=params,
-        )
-    response.raise_for_status()
-    return response.json()
-
-
 def _get_history(chat_id: int) -> ConversationHistory:
-    history = _histories.get(chat_id)
-    if history is None:
-        maxlen = MAX_HISTORY_MESSAGES * 2 if MAX_HISTORY_MESSAGES > 0 else None
-        history = deque(maxlen=maxlen)
-        _histories[chat_id] = history
-    return history
-
-
-def _build_messages(chat_id: int, user_text: str) -> List[dict[str, str]]:
-    history = _get_history(chat_id)
-    messages: List[dict[str, str]] = []
-    if SYSTEM_PROMPT:
-        messages.append({"role": "system", "content": SYSTEM_PROMPT})
-    messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
-    return messages
+    return _histories[chat_id]
 
 
 def _remember_exchange(chat_id: int, user_text: str, reply: str) -> None:
@@ -197,214 +169,390 @@ def _remember_exchange(chat_id: int, user_text: str, reply: str) -> None:
     history.append({"role": "assistant", "content": reply})
 
 
-async def _ask_gpt(chat_id: int, username: str, user_text: str) -> str:
+def _build_messages(chat_id: int, user_text: str) -> list[dict[str, str]]:
+    history = list(_get_history(chat_id))
+    messages: list[dict[str, str]] = []
+    if SYSTEM_PROMPT:
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_text})
+    return messages
+
+
+async def ask_gpt(chat_id: int, user_text: str) -> str:
     messages = _build_messages(chat_id, user_text)
-    logger.info("Forwarding message from @%s to GPT", username)
-    completion = client.chat.completions.create(model=GPT_MODEL, messages=messages)
+    completion = await asyncio.get_event_loop().run_in_executor(
+        None,
+        lambda: client.chat.completions.create(model=GPT_MODEL, messages=messages),
+    )
     reply = completion.choices[0].message.content or ""
     _remember_exchange(chat_id, user_text, reply)
-    logger.info("GPT replied to @%s: %s", username, reply)
     return reply
 
 
-async def handle_issue_key(message: Message, username: str) -> None:
-    progress = await message.answer("⏳ Создаю для тебя VPN-ключ…")
+async def api_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}"} if SERVICE_TOKEN else {}
+    async with httpx.AsyncClient(timeout=15.0) as http_client:
+        response = await http_client.post(
+            f"{VPN_API_URL.rstrip('/')}{path}", json=payload, headers=headers
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}"} if SERVICE_TOKEN else {}
+    async with httpx.AsyncClient(timeout=15.0) as http_client:
+        response = await http_client.get(
+            f"{VPN_API_URL.rstrip('/')}{path}", params=params, headers=headers
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+async def register_user(username: str, chat_id: int, ref: str | None) -> None:
     try:
-        payload = await request_key(username)
-    except Exception:
-        await progress.edit_text(
-            "⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже.",
-            reply_markup=build_result_markup(),
+        await api_post("/users/register", {"username": username, "chat_id": chat_id, "referrer": ref})
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Failed to register user", extra={"status": exc.response.status_code})
+
+
+async def apply_referral(referrer: str, referee: str, chat_id: int) -> None:
+    try:
+        await api_post(
+            "/referral/use",
+            {"referrer": referrer, "referee": referee, "chat_id": chat_id},
         )
-        return
+    except httpx.HTTPStatusError as exc:
+        logger.info("Referral not applied", extra={"status": exc.response.status_code})
 
-    if not payload.get("ok"):
-        await progress.edit_text(
-            "⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже.",
-            reply_markup=build_result_markup(),
+
+async def issue_trial_key(username: str, chat_id: int) -> dict[str, Any] | None:
+    try:
+        payload = await api_post(
+            "/vpn/issue_key",
+            {"username": username, "chat_id": chat_id, "trial": True},
         )
-        return
+        if not payload.get("ok"):
+            return None
+        return payload
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409:
+            return exc.response.json()
+        logger.exception("Failed to issue key")
+        return None
 
-    text, link = format_key_info(payload, username, "🎁 Твой VPN-ключ готов!")
-    await progress.edit_text(text, reply_markup=build_result_markup(link))
 
+async def fetch_keys(username: str) -> list[dict[str, Any]]:
+    try:
+        response = await api_get(f"/users/{username}/keys")
+        if response.get("ok"):
+            return response.get("keys", [])
+    except httpx.HTTPStatusError as exc:
+        logger.exception("Failed to fetch keys", extra={"status": exc.response.status_code})
+    return []
+
+
+async def fetch_referral_stats(username: str) -> dict[str, Any]:
+    try:
+        response = await api_get(f"/users/{username}/referrals")
+        if response.get("ok"):
+            return response
+    except httpx.HTTPStatusError:
+        pass
+    return {"username": username, "total_referrals": 0, "total_days": 0}
+
+
+def format_key_message(payload: dict[str, Any]) -> str:
+    expires = payload.get("expires_at", "—")
+    trial = "да" if payload.get("trial") else "нет"
+    status = "активен" if payload.get("active") else "неактивен"
+    parts = [
+        "<b>VPN-ключ</b>",
+        f"UUID: <code>{payload.get('uuid')}</code>",
+        f"Статус: {status}",
+        f"Триал: {trial}",
+        f"Действует до: {expires}",
+    ]
+    link = payload.get("link")
     if link:
-        qr = make_qr(link)
-        await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
+        parts.append("")
+        parts.append(f"<code>{link}</code>")
+    return "\n".join(parts)
 
 
-async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
-    progress = await message.answer("🔎 Проверяю информацию о твоём ключе…")
-
-    try:
-        payload = await request_key_info(username, chat_id=chat_id)
-    except Exception:
-        await progress.edit_text(
-            "⚠️ Не удалось получить информацию о ключе. Попробуй позже.",
-            reply_markup=build_result_markup(),
-        )
-        return
-
-    if not payload.get("ok"):
-        await progress.edit_text(
-            "ℹ️ Активный ключ не найден. Нажми кнопку \"Получить новый ключ\" в меню.",
-            reply_markup=build_result_markup(),
-        )
-        return
-
-    text, link = format_key_info(payload, username, "🔐 Информация о твоём VPN-ключе:")
-    await progress.edit_text(text, reply_markup=build_result_markup(link))
-
-    if link:
-        qr = make_qr(link)
-        await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-
-
-async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
-    progress = await message.answer("♻️ Продлеваю срок действия твоего ключа…")
-
-    try:
-        renew_payload = await renew_key(username)
-    except Exception:
-        await progress.edit_text(
-            "⚠️ Не удалось продлить доступ. Попробуй ещё раз позже.",
-            reply_markup=build_result_markup(),
-        )
-        return
-
-    if not renew_payload.get("ok"):
-        detail = renew_payload.get("detail") or "Не удалось продлить доступ."
-        await progress.edit_text(f"⚠️ {detail}", reply_markup=build_result_markup())
-        return
-
-    try:
-        info_payload = await request_key_info(username, chat_id=chat_id)
-    except Exception:
-        info_payload = None
-
-    if info_payload and info_payload.get("ok"):
-        text, link = format_key_info(info_payload, username, "♻️ Доступ успешно продлён!")
-    else:
-        expires = renew_payload.get("expires_at")
-        lines = ["♻️ Доступ успешно продлён!"]
-        if expires:
-            lines.append(f"Новая дата окончания: {expires}")
-        link = None
-        text = "\n".join(lines)
-
-    await progress.edit_text(text, reply_markup=build_result_markup(link))
-
-    if link:
-        qr = make_qr(link)
-        await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-
-
-@dp.message(CommandStart())
-async def handle_start(message: Message) -> None:
-    await message.answer(
-        "👋 Привет! Я бот VPN_GPT. Помогу тебе получить и управлять VPN-доступом.\n"
-        "\nВыбери действие в меню ниже или просто напиши вопрос.",
-        reply_markup=build_main_menu(),
+def build_ai_instruction_prompt(device: str, goal: str, priority: str, trial_days: int, plans: Dict[str, int]) -> str:
+    plan_parts = [f"{code.upper()} — {price} ₽" for code, price in plans.items()]
+    return (
+        "Ты помогаешь пользователю настроить VPN. Сформируй короткую памятку из 3-4 пунктов: "
+        "1) какую программу установить под устройство, 2) как импортировать ссылку VLESS, 3) как оплатить тариф. "
+        "Пиши дружелюбно, без жаргона, используй эмодзи экономно.\n"
+        f"Устройство: {device}.\nЦель: {goal}.\nПриоритет: {priority}.\n"
+        f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}."
     )
 
 
-@dp.message(Command("menu"))
-async def handle_menu_command(message: Message) -> None:
-    await message.answer("Выбери нужное действие:", reply_markup=build_main_menu())
+def build_ai_keyboard(link: str | None, username: str, chat_id: int, ref: str | None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if link and _is_supported_button_link(link):
+        rows.append([InlineKeyboardButton(text="📥 Импортировать", url=link)])
+    rows.append([InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)])
+    rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-@dp.message(Command("buy"))
-async def handle_buy_command(message: Message) -> None:
-    username = message.from_user.username or f"id_{message.from_user.id}"
-    await handle_issue_key(message, username)
+def build_help_text() -> str:
+    return (
+        "ℹ️ <b>Нужна помощь?</b>\n"
+        "1. Установи V2Box на iOS/Android или Nekobox на Windows/macOS.\n"
+        "2. Импортируй ссылку VLESS из карточки ключа.\n"
+        "3. Если что-то не получается — напиши в чат поддержки @dobriy_vpn_support."
+    )
 
 
-@dp.message(Command("renew"))
-async def handle_renew_command(message: Message) -> None:
-    username = message.from_user.username or f"id_{message.from_user.id}"
-    await handle_renew_key(message, username, message.chat.id)
+@dp.message(CommandStart())
+async def handle_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    user = message.from_user
+    if user is None:
+        return
+    username = user.username or f"id_{user.id}"
+    payload = ""
+    if message.text and " " in message.text:
+        payload = message.text.split(" ", 1)[1]
+    ref = payload.strip() or None
+
+    if ref and ref != username:
+        await apply_referral(ref, username, message.chat.id)
+
+    await register_user(username, message.chat.id, ref)
+    await bot.set_chat_menu_button(message.chat.id, MenuButtonDefault())
+
+    greeting = (
+        "👋 Привет! Я VPN_GPT — помогу подключиться к VPN в три шага:\n"
+        "1️⃣ Получи ключ (тест на 3 дня).\n"
+        "2️⃣ Следуй инструкции, подключи приложение.\n"
+        "3️⃣ Оплати подходящий тариф — и пользуйся без ограничений."
+    )
+    await message.answer(greeting, reply_markup=build_main_menu())
 
 
-@dp.message(Command("mykey"))
-async def handle_mykey_command(message: Message) -> None:
-    username = message.from_user.username or f"id_{message.from_user.id}"
-    await handle_get_key(message, username, message.chat.id)
+@dp.callback_query(F.data == MENU_BACK)
+async def handle_menu_back(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await call.message.edit_text("Выбери действие:", reply_markup=build_main_menu())
+    await call.answer()
+
+
+@dp.callback_query(F.data == MENU_QUICK)
+async def handle_quick_start(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer()
+        return
+    username = user.username or f"id_{user.id}"
+    await register_user(username, call.message.chat.id, None)
+    payload = await issue_trial_key(username, call.message.chat.id)
+    if not payload:
+        await call.message.edit_text(
+            "⚠️ Не удалось выдать ключ. Попробуй позже или свяжись с поддержкой.",
+            reply_markup=build_back_menu(),
+        )
+        await call.answer()
+        return
+
+    if payload.get("error") == "trial_already_used":
+        await call.message.edit_text(
+            "У тебя уже есть активный тестовый ключ. Посмотри его в разделе «Мои ключи».",
+            reply_markup=build_back_menu(),
+        )
+        await call.answer()
+        return
+
+    link = payload.get("link")
+    text = (
+        "🎁 Готово! Твой тестовый доступ активирован."\
+        + "\n\n" + format_key_message(payload)
+    )
+    await call.message.edit_text(text, reply_markup=build_result_markup(link))
+    if link:
+        qr = make_qr(link)
+        await call.message.answer_photo(
+            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
+            caption="📱 Отсканируй, чтобы добавить ключ в приложение",
+        )
+    await call.answer("Ключ выдан")
+
+
+@dp.callback_query(F.data == MENU_KEYS)
+async def handle_my_keys(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer()
+        return
+    username = user.username or f"id_{user.id}"
+    keys = await fetch_keys(username)
+    if not keys:
+        text = "Пока что ключей нет. Нажми «Быстрый старт», чтобы получить тестовый доступ!"
+    else:
+        parts = ["🔑 <b>Твои ключи</b>"]
+        for idx, key in enumerate(keys, start=1):
+            status = "✅ активен" if key.get("active") else "⚠️ неактивен"
+            parts.append(
+                f"\n<b>#{idx}</b> · {status}\nДействует до: {key.get('expires_at', '—')}"
+            )
+            if key.get("link"):
+                parts.append(f"<code>{key['link']}</code>")
+        text = "\n".join(parts)
+    reply_markup = build_payment_keyboard(username, call.message.chat.id, username)
+    await call.message.edit_text(text, reply_markup=reply_markup)
+    await call.answer()
+
+
+@dp.callback_query(F.data == MENU_PAY)
+async def handle_pay(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer()
+        return
+    username = user.username or f"id_{user.id}"
+    text = "Выбери тариф: оплата откроется в браузере на сайте vpn-gpt.store."
+    keyboard = build_payment_keyboard(username, call.message.chat.id, username)
+    await call.message.edit_text(text, reply_markup=keyboard)
+    await call.answer()
+
+
+@dp.callback_query(F.data == MENU_REF)
+async def handle_referrals(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer()
+        return
+    username = user.username or f"id_{user.id}"
+    stats = await fetch_referral_stats(username)
+    ref_link = f"https://t.me/{BOT_USERNAME}?start={username}" if BOT_USERNAME else ""
+    text = (
+        "🤝 <b>Реферальная программа</b>\n"
+        f"Пригласи друга — и после его оплаты получи +{REFERRAL_BONUS_DAYS} дней.\n\n"
+        f"Твой прогресс: {stats.get('total_referrals', 0)} приглашений, {stats.get('total_days', 0)} бонусных дней.\n"
+        f"Ссылка: {ref_link or 'поделись своим @username'}"
+    )
+    await call.message.edit_text(text, reply_markup=build_back_menu())
+    await call.answer()
+
+
+@dp.callback_query(F.data == MENU_HELP)
+async def handle_help(call: CallbackQuery) -> None:
+    await call.message.edit_text(build_help_text(), reply_markup=build_back_menu())
+    await call.answer()
+
+
+@dp.callback_query(F.data == MENU_AI)
+async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(AiFlow.device)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
+    )
+    await call.message.edit_text(
+        "🧠 Давай подберём оптимальный сценарий. Какое устройство хочешь подключить?",
+        reply_markup=keyboard,
+    )
+    await call.answer()
+
+
+@dp.callback_query(F.data == CANCEL_AI)
+async def handle_ai_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await call.message.edit_text("Ок! Возвращаемся в меню.", reply_markup=build_main_menu())
+    await call.answer()
+
+
+@dp.message(AiFlow.device)
+async def process_ai_device(message: Message, state: FSMContext) -> None:
+    await state.update_data(device=message.text.strip())
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
+    )
+    await message.answer("Отлично! Для чего нужен VPN (стриминг, соцсети, безопасность)?", reply_markup=keyboard)
+    await state.set_state(AiFlow.goal)
+
+
+@dp.message(AiFlow.goal)
+async def process_ai_goal(message: Message, state: FSMContext) -> None:
+    await state.update_data(goal=message.text.strip())
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
+    )
+    await message.answer("Что важнее всего: скорость, стабильность или обход блокировок?", reply_markup=keyboard)
+    await state.set_state(AiFlow.priority)
+
+
+@dp.message(AiFlow.priority)
+async def process_ai_priority(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    device = data.get("device", "устройство не указано")
+    goal = data.get("goal", "цель не указана")
+    priority = message.text.strip()
+    await state.clear()
+
+    user = message.from_user
+    if user is None:
+        return
+    username = user.username or f"id_{user.id}"
+    await register_user(username, message.chat.id, None)
+
+    trial_payload = await issue_trial_key(username, message.chat.id)
+    if trial_payload and trial_payload.get("error") == "trial_already_used":
+        trial_payload = None
+
+    link = trial_payload.get("link") if trial_payload else None
+
+    prompt = build_ai_instruction_prompt(device, goal, priority, TRIAL_DAYS, PLANS)
+    ai_message = await ask_gpt(message.chat.id, prompt)
+
+    response_parts = ["🧠 <b>Твой персональный план</b>", ai_message.strip()]
+    if trial_payload:
+        response_parts.append("\n🎁 Тестовый доступ уже активирован:")
+        response_parts.append(format_key_message(trial_payload))
+    else:
+        response_parts.append(
+            "\nУ тебя уже есть активный ключ. Посмотри его в разделе «Мои ключи»."
+        )
+
+    keyboard = build_ai_keyboard(link, username, message.chat.id, user.username)
+    await message.answer("\n".join(response_parts), reply_markup=keyboard)
+
+    if link:
+        qr = make_qr(link)
+        await message.answer_photo(
+            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
+            caption="📱 Отсканируй QR для быстрого подключения",
+        )
+
+
+@dp.message(Command("help"))
+async def command_help(message: Message):
+    await message.answer(build_help_text(), reply_markup=build_back_menu())
 
 
 @dp.message()
 async def handle_message(message: Message) -> None:
-    if not message.text:
-        await message.answer("Пожалуйста, отправь текстовое сообщение.")
+    user = message.from_user
+    if user is None or not message.text:
         return
-
-    username = message.from_user.username or f"id_{message.from_user.id}"
-    user_text = message.text.strip()
-
-    try:
-        reply = await _ask_gpt(message.chat.id, username, user_text)
-    except Exception:
-        logger.exception("Failed to obtain GPT response for @%s", username)
-        await message.answer("⚠️ Не удалось получить ответ от GPT. Попробуй позже.")
-        return
-
+    reply = await ask_gpt(message.chat.id, message.text)
     await message.answer(reply)
 
 
-@dp.callback_query(F.data == "issue_key")
-async def issue_key_callback(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if not callback.message:
-        return
-    username = callback.from_user.username or f"id_{callback.from_user.id}"
-    await handle_issue_key(callback.message, username)
-
-
-@dp.callback_query(F.data == "renew_key")
-async def renew_key_callback(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if not callback.message:
-        return
-    username = callback.from_user.username or f"id_{callback.from_user.id}"
-    await handle_renew_key(callback.message, username, callback.message.chat.id)
-
-
-@dp.callback_query(F.data == "get_key")
-async def get_key_callback(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if not callback.message:
-        return
-    username = callback.from_user.username or f"id_{callback.from_user.id}"
-    await handle_get_key(callback.message, username, callback.message.chat.id)
-
-
-@dp.callback_query(F.data == "show_menu")
-async def show_menu_callback(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if not callback.message:
-        return
-    await callback.message.answer("Выбери нужное действие:", reply_markup=build_main_menu())
-
-
-async def clear_bot_menu() -> None:
-    try:
-        await bot.delete_my_commands()
-        await bot.set_chat_menu_button(MenuButtonDefault())
-    except Exception:
-        logger.exception("Unable to reset the bot menu")
+async def on_startup() -> None:
+    global BOT_USERNAME
+    me = await bot.get_me()
+    BOT_USERNAME = me.username
+    logger.info("Bot started", extra={"username": BOT_USERNAME})
 
 
 async def main() -> None:
-    await clear_bot_menu()
-    logger.info("VPN_GPT relay bot started")
+    await on_startup()
     await dp.start_polling(bot)
 
 

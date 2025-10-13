@@ -18,7 +18,7 @@ logger = get_logger("api")
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
 
 # === Routers ===
-from api.endpoints import admin, notify, users, vpn  # noqa: E402
+from api.endpoints import admin, notify, payments, referrals, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
 
 
@@ -32,8 +32,10 @@ def ensure_database() -> None:
 
 
 # === Router registration ===
-app.include_router(vpn.router, prefix="/vpn", tags=["vpn"])
+app.include_router(vpn.router)
 app.include_router(users.router)
+app.include_router(payments.router)
+app.include_router(referrals.router)
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
