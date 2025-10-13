@@ -53,6 +53,20 @@ def _get_vless_inbound(cfg: dict) -> dict:
     raise XrayError("vless_inbound_not_found")
 
 
+def _normalise_email(email: str | None) -> str | None:
+    if email is None:
+        return None
+    stripped = email.strip()
+    return stripped or None
+
+
+def _email_key(email: str | None) -> str | None:
+    normalised = _normalise_email(email)
+    if normalised is None:
+        return None
+    return normalised.casefold()
+
+
 def _deduplicate_clients(clients: list[dict]) -> list[dict]:
     deduped: list[dict] = []
     seen_ids: set[str] = set()
@@ -60,17 +74,27 @@ def _deduplicate_clients(clients: list[dict]) -> list[dict]:
     for client in reversed(clients):
         cid = client.get("id")
         email = client.get("email")
+        normalised_email = _normalise_email(email)
+        email_key = normalised_email.casefold() if normalised_email is not None else None
         if cid and cid in seen_ids:
             logger.warning("Removed duplicate client id from Xray config", extra={"client_id": cid})
             continue
-        if email and email in seen_emails:
-            logger.warning("Removed duplicate client email from Xray config", extra={"email": email})
+        if email_key and email_key in seen_emails:
+            logger.warning(
+                "Removed duplicate client email from Xray config",
+                extra={"email": normalised_email},
+            )
             continue
         if cid:
             seen_ids.add(cid)
-        if email:
-            seen_emails.add(email)
-        deduped.append(client)
+        if email_key:
+            seen_emails.add(email_key)
+        if email != normalised_email:
+            normalised_client = dict(client)
+            normalised_client["email"] = normalised_email
+            deduped.append(normalised_client)
+        else:
+            deduped.append(client)
     deduped.reverse()
     return deduped
 
@@ -95,7 +119,18 @@ def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
 
     config_changed = dedup_performed
 
-    existing_by_email = next((client for client in clients if client.get("email") == email), None)
+    normalised_email = _normalise_email(email)
+    email_key = normalised_email.casefold() if normalised_email is not None else None
+
+    if normalised_email is None:
+        logger.error("Attempted to add Xray client without email", extra={"uuid": uuid_value})
+        raise XrayError("email_required")
+
+    existing_by_email = None
+    if email_key:
+        existing_by_email = next(
+            (client for client in clients if _email_key(client.get("email")) == email_key), None
+        )
     if existing_by_email is not None:
         if existing_by_email.get("id") != uuid_value:
             logger.info(
@@ -107,14 +142,14 @@ def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
         if existing_by_email.get("level") != 0:
             existing_by_email["level"] = 0
             config_changed = True
-        if existing_by_email.get("email") != email:
-            existing_by_email["email"] = email
+        if existing_by_email.get("email") != normalised_email:
+            existing_by_email["email"] = normalised_email
             config_changed = True
 
         if config_changed:
             _save(cfg)
             _restart()
-            if existing_by_email.get("id") == uuid_value and existing_by_email.get("email") == email:
+            if existing_by_email.get("id") == uuid_value and existing_by_email.get("email") == normalised_email:
                 logger.info("Updated Xray client", extra={"uuid": uuid_value, "email": email})
             else:  # pragma: no cover - defensive branch
                 logger.info("Normalised Xray client list")
@@ -125,8 +160,8 @@ def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
 
     existing_by_id = next((client for client in clients if client.get("id") == uuid_value), None)
     if existing_by_id is not None:
-        if existing_by_id.get("email") != email:
-            existing_by_id["email"] = email
+        if existing_by_id.get("email") != normalised_email:
+            existing_by_id["email"] = normalised_email
             config_changed = True
         if existing_by_id.get("level") != 0:
             existing_by_id["level"] = 0
@@ -141,7 +176,7 @@ def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
         logger.info("Client already present in Xray config", extra={"uuid": uuid_value, "email": email})
         return False
 
-    clients.append({"id": uuid_value, "level": 0, "email": email})
+    clients.append({"id": uuid_value, "level": 0, "email": normalised_email})
     _save(cfg)
     _restart()
     logger.info("Added Xray client", extra={"uuid": uuid_value, "email": email})
