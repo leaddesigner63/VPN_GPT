@@ -186,14 +186,6 @@ KEY_LIMIT_CHECK_FAILED_MESSAGE = (
 )
 
 SETTINGS_SESSIONS: set[int] = set()
-SETTINGS_SYSTEM_PROMPT = (
-    "Ты — специалист по настройке VPN WireGuard для сервиса VPN_GPT."
-    " Помогай пользователю установить соединение на его устройстве, задавай уточняющие вопросы,"
-    " если не хватает данных, и выдавай инструкции пошагово."
-    " Разрешено рекомендовать WireGuard-клиенты и описывать настройку профиля из ссылки."
-    " Если пользователь сообщает, что всё готово, убедись что соединение работает и предложи сохранить ключ."
-    " Будь дружелюбен и отвечай по-русски."
-)
 
 KEYBOARD_REMOVE = ReplyKeyboardRemove()
 
@@ -540,21 +532,9 @@ async def handle_message(message: Message):
     await message.answer("✉️ Обрабатываю запрос...", reply_markup=KEYBOARD_REMOVE)
 
     try:
-        system_prompt = (
-            SETTINGS_SYSTEM_PROMPT
-            if is_settings_mode
-            else (
-                "Пользователь Telegram @"
-                f"{username}. Отвечай кратко, дружелюбно и по сути."
-                " Если текст — 'Мой ключ', 'Продлить подписку' или 'Настройки', инициируй"
-                " соответствующий сценарий через OpenAPI."
-            )
-        )
-
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ]
         )
