@@ -54,9 +54,9 @@ def _is_supported_button_link(link: str) -> bool:
     if parsed.scheme in {"http", "https"}:
         return bool(parsed.netloc)
 
-    # Telegram-specific deeplinks (tg://) rely on the path component.
+    # Telegram-specific deeplinks (tg://) may rely on path, netloc or query params.
     if parsed.scheme == "tg":
-        return bool(parsed.path)
+        return bool(parsed.path or parsed.netloc or parsed.query)
 
     return False
 
