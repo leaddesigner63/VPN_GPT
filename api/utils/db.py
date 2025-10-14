@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence, TypeVar
 
 from api.utils.logging import get_logger
+from api.utils import xray
 
 BASE_DIR = Path(os.getenv("APP_ROOT", Path(__file__).resolve().parents[2]))
 DEFAULT_DB = BASE_DIR / "dialogs.db"
@@ -385,6 +386,7 @@ def create_vpn_key(
     username = normalise_username(username)
     issued_at = _utcnow().isoformat()
     expires_iso = expires_at.replace(microsecond=0).isoformat()
+    xray_label = (label or username).strip() or username
 
     def _operation() -> dict:
         with connect() as con:
@@ -411,6 +413,28 @@ def create_vpn_key(
         }
 
     payload = _run_with_schema_retry(_operation)
+
+    try:
+        changed = xray.add_client_no_duplicates(uuid_value, xray_label)
+    except Exception:
+        logger.exception(
+            "Failed to sync VPN key with Xray",
+            extra={"username": username, "uuid": uuid_value},
+        )
+
+        def _rollback() -> None:
+            with connect() as con:
+                con.execute("DELETE FROM vpn_keys WHERE uuid=?", (uuid_value,))
+
+        _run_with_schema_retry(_rollback)
+        raise
+
+    if changed:
+        logger.info(
+            "Synced VPN key with Xray",
+            extra={"username": username, "uuid": uuid_value, "email": xray_label},
+        )
+
     logger.info(
         "Created VPN key",
         extra={"username": username, "uuid": uuid_value, "expires_at": expires_iso, "trial": trial},
