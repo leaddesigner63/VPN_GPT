@@ -184,25 +184,40 @@ def build_back_menu() -> InlineKeyboardMarkup:
 
 
 def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) -> InlineKeyboardMarkup:
+    """Show tariffs with callbacks that trigger invoice creation."""
+
+    _ = (username, chat_id, ref)  # preserved for compatibility with callers
     rows: list[list[InlineKeyboardButton]] = []
     for plan in PLAN_ORDER:
         price = PLANS[plan]
-        params = {"u": username, "plan": plan}
-        if chat_id:
-            params["c"] = str(chat_id)
-        if ref:
-            params["r"] = ref
-        payment_url = f"{BOT_PAYMENT_URL}?{urlencode(params)}"
         rows.append(
             [
                 InlineKeyboardButton(
                     text=f"{plan.upper()} · {price} ₽",
-                    url=payment_url,
+                    callback_data=f"{PAY_PLAN_PREFIX}{plan}",
                 )
             ]
         )
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_payment_result_keyboard(pay_url: str | None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if pay_url:
+        rows.append([InlineKeyboardButton(text="💳 Оплатить", url=pay_url)])
+    rows.append([InlineKeyboardButton(text="⬅️ Выбрать другой тариф", callback_data=MENU_PAY)])
+    rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_payment_fallback_url(username: str, plan: str, chat_id: int | None, ref: str | None) -> str:
+    params: dict[str, str] = {"u": username, "plan": plan, "auto": "1"}
+    if chat_id:
+        params["c"] = str(chat_id)
+    if ref:
+        params["r"] = ref
+    return f"{BOT_PAYMENT_URL}?{urlencode(params)}"
 
 
 def _is_supported_button_link(link: str) -> bool:
@@ -258,6 +273,36 @@ async def api_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
         )
     response.raise_for_status()
     return response.json()
+
+
+async def create_payment_invoice(
+    username: str,
+    chat_id: int | None,
+    plan: str,
+    referrer: str | None,
+    user_id: int | None,
+) -> dict[str, Any] | None:
+    metadata: dict[str, Any] = {"channel": "telegram"}
+    if user_id:
+        metadata["telegram_user_id"] = user_id
+    if BOT_USERNAME:
+        metadata["bot_username"] = BOT_USERNAME
+    payload = {
+        "username": username,
+        "chat_id": chat_id,
+        "plan": plan,
+        "referrer": referrer if referrer and referrer != username else None,
+        "source": "telegram",
+        "metadata": metadata,
+    }
+    try:
+        return await api_post("/payments/create", payload)
+    except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "Failed to create payment invoice",
+            extra={"status": exc.response.status_code, "plan": plan},
+        )
+        return None
 
 
 async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -504,9 +549,62 @@ async def handle_pay(call: CallbackQuery) -> None:
     if call.message:
         await _delete_previous_qr(call.message.chat.id)
     username = user.username or f"id_{user.id}"
-    text = "Выбери тариф: оплата откроется в браузере на сайте vpn-gpt.store."
+    text = (
+        "Выбери тариф. Мы создадим счёт автоматически и отправим безопасную ссылку на оплату."
+    )
     keyboard = build_payment_keyboard(username, call.message.chat.id, username)
     await call.message.edit_text(text, reply_markup=keyboard)
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith(PAY_PLAN_PREFIX))
+async def handle_pay_plan(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer("Не удалось определить пользователя", show_alert=True)
+        return
+
+    plan = call.data[len(PAY_PLAN_PREFIX) :]
+    if plan not in PLANS:
+        await call.answer("Неизвестный тариф", show_alert=True)
+        return
+
+    chat_id = call.message.chat.id if call.message else None
+    username = user.username or f"id_{user.id}"
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
+
+    await register_user(username, chat_id, user.username)
+
+    invoice = await create_payment_invoice(username, chat_id, plan, user.username, user.id)
+    fallback_url = build_payment_fallback_url(username, plan, chat_id, user.username)
+
+    if invoice and invoice.get("payment_url"):
+        pay_url = invoice["payment_url"]
+        payment_id = invoice.get("payment_id", "—")
+        amount = invoice.get("amount") or PLANS.get(plan)
+        logger.info(
+            "Created payment invoice",
+            extra={"payment_id": payment_id, "plan": plan, "username": username},
+        )
+        text = (
+            f"💳 Счёт <b>{payment_id}</b> для тарифа {plan.upper()} создан.\n"
+            f"Сумма к оплате: {amount} ₽. Нажми «Оплатить», чтобы завершить покупку."
+        )
+        markup = build_payment_result_keyboard(pay_url)
+    else:
+        logger.warning(
+            "Falling back to manual payment page",
+            extra={"plan": plan, "username": username},
+        )
+        text = (
+            "⚠️ Не удалось получить автоматическую ссылку на оплату. "
+            "Открой резервную страницу и оплатите вручную — мы привяжем платёж к вашему аккаунту."
+        )
+        markup = build_payment_result_keyboard(fallback_url)
+
+    if call.message:
+        await call.message.edit_text(text, reply_markup=markup)
     await call.answer()
 
 

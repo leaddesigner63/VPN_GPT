@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Sequence, TypeVar
+from typing import Any, Callable, Iterable, Iterator, Sequence, TypeVar
 
 from api.utils.logging import get_logger
 from api.utils import xray
@@ -24,7 +25,20 @@ def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
     if "no such column" not in message and "no column named" not in message:
         return False
-    for column in ("trial", "active", "label"):
+    for column in (
+        "trial",
+        "active",
+        "label",
+        "payment_url",
+        "provider",
+        "provider_payment_id",
+        "currency",
+        "external_status",
+        "raw_provider_payload",
+        "referrer",
+        "source",
+        "metadata",
+    ):
         if column in message:
             return True
     return False
@@ -107,9 +121,18 @@ CREATE TABLE IF NOT EXISTS payments (
   chat_id INTEGER,
   plan TEXT NOT NULL,
   amount INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'RUB',
   status TEXT NOT NULL,
   paid_at TEXT,
   key_uuid TEXT,
+  provider TEXT,
+  provider_payment_id TEXT,
+  payment_url TEXT,
+  external_status TEXT,
+  raw_provider_payload TEXT,
+  referrer TEXT,
+  source TEXT,
+  metadata TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -131,6 +154,7 @@ INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_vpn_keys_expires ON vpn_keys(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_payments_username ON payments(username)",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
+    "CREATE INDEX IF NOT EXISTS idx_payments_provider_payment_id ON payments(provider_payment_id)",
 )
 
 
@@ -465,6 +489,25 @@ def deactivate_key(uuid_value: str) -> None:
     logger.info("Deactivated VPN key", extra={"uuid": uuid_value})
 
 
+def _normalise_payment_row(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    for field in ("raw_provider_payload", "metadata"):
+        value = row.get(field)
+        if isinstance(value, str) and value:
+            try:
+                row[field] = json.loads(value)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Failed to decode JSON column", extra={"field": field, "payment_id": row.get("payment_id")}
+                )
+    if row.get("referrer") == "":
+        row["referrer"] = None
+    if row.get("source") == "":
+        row["source"] = None
+    return row
+
+
 def create_payment(
     *,
     payment_id: str,
@@ -472,18 +515,71 @@ def create_payment(
     chat_id: int | None,
     plan: str,
     amount: int,
+    currency: str,
     status: str = "pending",
+    provider: str | None = None,
+    provider_payment_id: str | None = None,
+    payment_url: str | None = None,
+    external_status: str | None = None,
+    raw_provider_payload: dict | None = None,
+    referrer: str | None = None,
+    source: str | None = None,
+    metadata: dict | None = None,
 ) -> dict:
     now = _utcnow().isoformat()
     username = normalise_username(username)
+    referrer_norm = normalise_username(referrer) if referrer else None
+    raw_payload_json = json.dumps(raw_provider_payload, ensure_ascii=False) if raw_provider_payload else None
+    metadata_json = json.dumps(metadata, ensure_ascii=False) if metadata else None
+
     def _operation() -> None:
         with connect() as con:
             con.execute(
                 """
-                INSERT INTO payments (payment_id, username, chat_id, plan, amount, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO payments (
+                    payment_id,
+                    username,
+                    chat_id,
+                    plan,
+                    amount,
+                    currency,
+                    status,
+                    paid_at,
+                    key_uuid,
+                    provider,
+                    provider_payment_id,
+                    payment_url,
+                    external_status,
+                    raw_provider_payload,
+                    referrer,
+                    source,
+                    metadata,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (payment_id, username, chat_id, plan, amount, status, now, now),
+                (
+                    payment_id,
+                    username,
+                    chat_id,
+                    plan,
+                    amount,
+                    currency,
+                    status,
+                    None,
+                    None,
+                    provider,
+                    provider_payment_id,
+                    payment_url,
+                    external_status,
+                    raw_payload_json,
+                    referrer_norm,
+                    source,
+                    metadata_json,
+                    now,
+                    now,
+                ),
             )
 
     _run_with_schema_retry(_operation)
@@ -494,30 +590,67 @@ def create_payment(
         "chat_id": chat_id,
         "plan": plan,
         "amount": amount,
+        "currency": currency,
         "status": status,
+        "provider": provider,
+        "provider_payment_id": provider_payment_id,
+        "payment_url": payment_url,
+        "external_status": external_status,
+        "raw_provider_payload": raw_provider_payload,
+        "referrer": referrer_norm,
+        "source": source,
+        "metadata": metadata,
         "created_at": now,
         "updated_at": now,
     }
 
 
-def update_payment_status(payment_id: str, *, status: str, paid_at: datetime | None = None, key_uuid: str | None = None) -> dict | None:
+def update_payment_status(
+    payment_id: str,
+    *,
+    status: str,
+    paid_at: datetime | None = None,
+    key_uuid: str | None = None,
+    provider_status: str | None = None,
+    payment_url: str | None = None,
+    raw_provider_payload: dict | None = None,
+) -> dict | None:
     now = _utcnow().isoformat()
     paid_iso = paid_at.replace(microsecond=0).isoformat() if paid_at else None
+    raw_payload_json = json.dumps(raw_provider_payload, ensure_ascii=False) if raw_provider_payload else None
+
     def _operation() -> dict | None:
         with connect() as con:
+            assignments = [
+                "status=?",
+                "paid_at=COALESCE(?, paid_at)",
+                "key_uuid=COALESCE(?, key_uuid)",
+                "updated_at=?",
+            ]
+            params: list[Any] = [status, paid_iso, key_uuid, now]
+
+            if provider_status is not None:
+                assignments.append("external_status=?")
+                params.append(provider_status)
+            if payment_url is not None:
+                assignments.append("payment_url=?")
+                params.append(payment_url)
+            if raw_payload_json is not None:
+                assignments.append("raw_provider_payload=?")
+                params.append(raw_payload_json)
+
+            params.append(payment_id)
+
             con.execute(
-                """
-                UPDATE payments
-                SET status=?, paid_at=COALESCE(?, paid_at), key_uuid=COALESCE(?, key_uuid), updated_at=?
-                WHERE payment_id=?
-                """,
-                (status, paid_iso, key_uuid, now, payment_id),
+                f"UPDATE payments SET {', '.join(assignments)} WHERE payment_id=?",
+                params,
             )
             cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
             row = cur.fetchone()
         return _row_to_dict(row)
 
-    return _run_with_schema_retry(_operation)
+    result = _run_with_schema_retry(_operation)
+    return _normalise_payment_row(result)
 
 
 def get_payment(payment_id: str) -> dict | None:
@@ -527,7 +660,8 @@ def get_payment(payment_id: str) -> dict | None:
             row = cur.fetchone()
         return _row_to_dict(row)
 
-    return _run_with_schema_retry(_operation)
+    result = _run_with_schema_retry(_operation)
+    return _normalise_payment_row(result)
 
 
 def log_referral_bonus(referrer: str, referee: str, bonus_days: int) -> None:
@@ -731,6 +865,64 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
                         "Adding missing 'updated_at' column to tg_users table", extra={"path": str(resolved)}
                     )
                     con.execute("ALTER TABLE tg_users ADD COLUMN updated_at TEXT")
+
+            payment_columns = _table_columns(con, "payments")
+            if payment_columns:
+                if "currency" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'currency' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN currency TEXT DEFAULT 'RUB'")
+
+                if "provider" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'provider' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN provider TEXT")
+
+                if "provider_payment_id" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'provider_payment_id' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN provider_payment_id TEXT")
+
+                if "payment_url" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'payment_url' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN payment_url TEXT")
+
+                if "external_status" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'external_status' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN external_status TEXT")
+
+                if "raw_provider_payload" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'raw_provider_payload' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN raw_provider_payload TEXT")
+
+                if "referrer" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'referrer' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN referrer TEXT")
+
+                if "source" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'source' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN source TEXT")
+
+                if "metadata" not in payment_columns:
+                    logger.warning(
+                        "Adding missing 'metadata' column to payments table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE payments ADD COLUMN metadata TEXT")
+
+                _apply_indexes(con)
     except Exception as exc:  # pragma: no cover - defensive
         MIGRATION_ERROR = (resolved, exc)
         logger.exception("Failed to apply database migrations", extra={"path": str(resolved)})
