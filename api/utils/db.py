@@ -21,7 +21,7 @@ T = TypeVar("T")
 
 def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
-    if "no such column" not in message:
+    if "no such column" not in message and "no column named" not in message:
         return False
     for column in ("trial", "active", "label"):
         if column in message:
