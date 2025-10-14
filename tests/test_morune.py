@@ -159,3 +159,42 @@ def test_create_invoice_falls_back_to_scanning(monkeypatch, morune_client):
     assert invoice.status == "pending"
     assert invoice.amount == 500
     assert invoice.currency == "USD"
+
+
+def test_create_invoice_handles_html_links(monkeypatch, morune_client):
+    payload = {
+        "data": {
+            "attributes": {
+                "hash": "hash-005",
+                "status": "created",
+                "payment_page": {
+                    "html": '<iframe src="//pay.example/iframe/hash-005"></iframe>',
+                },
+                "links": [
+                    {"rel": "backup", "href": "//pay.example/cashier/hash-005"},
+                    {"rel": "alt", "href": "/cashier/hash-005"},
+                ],
+            },
+            "result": {
+                "description": "Оплатите по ссылке pay.example/cashier/hash-005",
+            },
+        }
+    }
+
+    monkeypatch.setattr(morune_client, "_request", lambda *args, **kwargs: payload)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-5",
+        amount=700,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.provider_payment_id == "hash-005"
+    assert invoice.payment_url == "https://pay.example/cashier/hash-005"
+    assert invoice.status == "created"
+    assert invoice.amount is None
+    assert invoice.currency == "RUB"

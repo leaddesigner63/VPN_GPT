@@ -4,8 +4,10 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from collections.abc import Mapping, Sequence
@@ -13,6 +15,14 @@ from collections.abc import Mapping, Sequence
 from api.utils.logging import get_logger
 
 logger = get_logger("integrations.morune")
+
+_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_SCHEMELESS_URL_RE = re.compile(r"(?:(?:https?:)?//)[^\s\"'<>]+", re.IGNORECASE)
+_RELATIVE_PATH_RE = re.compile(r"(?:(?<=^)|(?<=\s))/[^\s\"'<>]+")
+_MORUNE_DOMAIN_RE = re.compile(
+    r"\b(?:[a-z0-9-]+\.)*morune\.[a-z]{2,}(?:/[^\s\"'<>]*)?",
+    re.IGNORECASE,
+)
 
 
 class MoruneError(RuntimeError):
@@ -139,7 +149,7 @@ def _search_nested_value(payload: Any, keys: Sequence[str]) -> Any | None:
                 if isinstance(value, Mapping) or _is_sequence(value):
                     stack.append(value)
         elif _is_sequence(current):
-            for item in current:
+            for item in reversed(list(current)):
                 if isinstance(item, Mapping) or _is_sequence(item):
                     stack.append(item)
 
@@ -191,8 +201,11 @@ def _extract_first_url(payload: Any) -> str | None:
             for value in values:
                 if isinstance(value, str):
                     candidate = value.strip()
-                    if candidate.startswith("http://") or candidate.startswith("https://"):
-                        return candidate
+                    if not candidate:
+                        continue
+                    url_candidate = _detect_url_candidate(candidate)
+                    if url_candidate:
+                        return url_candidate
             for value in reversed(values):
                 if isinstance(value, Mapping) or _is_sequence(value):
                     stack.append(value)
@@ -200,12 +213,80 @@ def _extract_first_url(payload: Any) -> str | None:
             for item in current:
                 if isinstance(item, str):
                     candidate = item.strip()
-                    if candidate.startswith("http://") or candidate.startswith("https://"):
-                        return candidate
+                    if not candidate:
+                        continue
+                    url_candidate = _detect_url_candidate(candidate)
+                    if url_candidate:
+                        return url_candidate
             for item in reversed(list(current)):
                 if isinstance(item, Mapping) or _is_sequence(item):
                     stack.append(item)
 
+    return None
+
+
+def _detect_url_candidate(text: str) -> str | None:
+    if not text:
+        return None
+    stripped = text.strip()
+    if stripped.startswith(("http://", "https://", "//")) and stripped.strip("/"):
+        return stripped
+    if stripped.startswith("/") and stripped.strip("/"):
+        return stripped
+    match = _URL_RE.search(text)
+    if match:
+        return match.group(0)
+    match = _SCHEMELESS_URL_RE.search(text)
+    if match:
+        candidate = match.group(0)
+        if candidate.strip("/"):
+            return candidate
+    match = _RELATIVE_PATH_RE.search(text)
+    if match:
+        candidate = match.group(0)
+        if candidate.strip("/"):
+            return candidate
+    match = _MORUNE_DOMAIN_RE.search(text)
+    if match:
+        candidate = match.group(0)
+        if candidate:
+            return candidate
+    return None
+
+
+def _coerce_url(candidate: str | None, *, base_url: str | None = None) -> str | None:
+    if not candidate:
+        return None
+    text = str(candidate).strip()
+    if not text:
+        return None
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    if text.startswith("//"):
+        return "https:" + text
+    if text.startswith("/"):
+        if base_url:
+            parsed = urlparse(base_url)
+            scheme = parsed.scheme or "https"
+            netloc = parsed.netloc
+            if netloc:
+                return f"{scheme}://{netloc}{text}"
+        return None
+    match = _URL_RE.search(text)
+    if match:
+        return match.group(0)
+    if text.lower().startswith("www."):
+        return f"https://{text}"
+    if "morune" in text.lower() and " " not in text:
+        stripped = text.lstrip("/")
+        return f"https://{stripped}" if not stripped.startswith("http") else stripped
+    parsed = urlparse(text)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return text
+    if parsed.netloc and not parsed.scheme:
+        return f"https://{text}"
+    if "." in text and " " not in text:
+        return f"https://{text}"
     return None
 
 
@@ -291,8 +372,42 @@ class MoruneClient:
             invoice.get("id")
             or invoice.get("payment_id")
             or invoice.get("uuid")
-            or _search_nested_value(invoice, ["payment_id", "paymentId", "invoice_id", "invoiceId", "order_id", "orderId", "uuid", "id"])
-            or _search_nested_value(data, ["payment_id", "paymentId", "invoice_id", "invoiceId", "order_id", "orderId", "uuid", "id"])
+            or _search_nested_value(
+                invoice,
+                [
+                    "payment_id",
+                    "paymentId",
+                    "invoice_id",
+                    "invoiceId",
+                    "order_id",
+                    "orderId",
+                    "uuid",
+                    "id",
+                    "hash",
+                    "payment_hash",
+                    "paymentHash",
+                    "invoice_hash",
+                    "invoiceHash",
+                ],
+            )
+            or _search_nested_value(
+                data,
+                [
+                    "payment_id",
+                    "paymentId",
+                    "invoice_id",
+                    "invoiceId",
+                    "order_id",
+                    "orderId",
+                    "uuid",
+                    "id",
+                    "hash",
+                    "payment_hash",
+                    "paymentHash",
+                    "invoice_hash",
+                    "invoiceHash",
+                ],
+            )
         )
         payment_url = (
             invoice.get("url")
@@ -386,6 +501,7 @@ class MoruneClient:
 
         provider_payment_id = _stringify(provider_payment_id)
         payment_url = _stringify(payment_url, extra_keys=["checkout", "payment"])
+        payment_url = _coerce_url(payment_url, base_url=self.base_url)
         status = str(status).lower() if status else "pending"
 
         if not provider_payment_id:
