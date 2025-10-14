@@ -89,3 +89,38 @@ def test_create_invoice_falls_back_to_links(monkeypatch, morune_client):
     assert invoice.status == "pending"
     assert invoice.amount == 450
     assert invoice.currency == "USD"
+
+
+def test_create_invoice_handles_new_invoice_url(monkeypatch, morune_client):
+    payload = {
+        "data": {
+            "invoice": {
+                "invoiceUrl": "https://pay.example/from-invoice",
+                "cashier_url": "https://pay.example/cashier",
+            },
+            "attributes": {
+                "invoice_id": "inv-003",
+                "status": "processing",
+                "amount": "600",
+                "currency": "gbp",
+            },
+        }
+    }
+
+    monkeypatch.setattr(morune_client, "_request", lambda *args, **kwargs: payload)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-3",
+        amount=600,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.provider_payment_id == "inv-003"
+    assert invoice.payment_url == "https://pay.example/from-invoice"
+    assert invoice.status == "processing"
+    assert invoice.amount == 600
+    assert invoice.currency == "GBP"
