@@ -62,6 +62,19 @@ def _get_int_env(name: str, default: int) -> int:
         raise RuntimeError(f"Переменная окружения {name} должна быть целым числом") from exc
 
 
+def _get_float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    cleaned = _strip_inline_comment(raw)
+    if cleaned == "":
+        return default
+    try:
+        return float(cleaned)
+    except ValueError as exc:  # pragma: no cover - defensive guard
+        raise RuntimeError(f"Переменная окружения {name} должна быть числом") from exc
+
+
 MAX_HISTORY_MESSAGES = _get_int_env("GPT_HISTORY_MESSAGES", 6)
 # FastAPI backend обслуживает бота на порту 8080 согласно документации.
 # Ранее значение по умолчанию указывало на 8000, из-за чего при отсутствии
@@ -74,6 +87,9 @@ BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.ht
 TRIAL_DAYS = _get_int_env("TRIAL_DAYS", 0)
 PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
 REFERRAL_BONUS_DAYS = _get_int_env("REFERRAL_BONUS_DAYS", 30)
+API_TIMEOUT = _get_float_env("VPN_API_TIMEOUT", 15.0)
+API_MAX_RETRIES = max(1, _get_int_env("VPN_API_MAX_RETRIES", 3))
+API_RETRY_BASE_DELAY = _get_float_env("VPN_API_RETRY_BASE_DELAY", 0.5)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
@@ -108,6 +124,17 @@ PLAN_ORDER = [code for code in ("1m", "3m", "12m") if code in PLANS] + [
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 client = OpenAI(api_key=GPT_API_KEY)
+
+
+class VpnApiUnavailableError(RuntimeError):
+    """Raised when the VPN API consistently returns server-side errors."""
+
+    def __init__(self, status_code: int | None = None) -> None:
+        self.status_code = status_code
+        message = "VPN API недоступно"
+        if status_code is not None:
+            message = f"VPN API недоступно (HTTP {status_code})"
+        super().__init__(message)
 
 
 class _QrMessageTracker:
@@ -265,14 +292,76 @@ async def ask_gpt(chat_id: int, user_text: str) -> str:
     return reply
 
 
-async def api_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+async def _request_with_retry(
+    method: str,
+    path: str,
+    *,
+    json_payload: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {SERVICE_TOKEN}"} if SERVICE_TOKEN else {}
-    async with httpx.AsyncClient(timeout=15.0) as http_client:
-        response = await http_client.post(
-            f"{VPN_API_URL.rstrip('/')}{path}", json=payload, headers=headers
-        )
-    response.raise_for_status()
-    return response.json()
+    base_url = VPN_API_URL.rstrip("/")
+    delay = API_RETRY_BASE_DELAY
+
+    for attempt in range(API_MAX_RETRIES):
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as http_client:
+                response = await http_client.request(
+                    method,
+                    f"{base_url}{path}",
+                    json=json_payload,
+                    params=params,
+                    headers=headers,
+                )
+        except httpx.RequestError as exc:
+            logger.warning(
+                "Failed to call VPN API",
+                extra={
+                    "path": path,
+                    "method": method,
+                    "attempt": attempt + 1,
+                    "error": str(exc),
+                },
+            )
+            if attempt + 1 >= API_MAX_RETRIES:
+                raise
+        else:
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if 500 <= status < 600:
+                    logger.warning(
+                        "VPN API returned server error",
+                        extra={
+                            "status": status,
+                            "path": path,
+                            "method": method,
+                            "attempt": attempt + 1,
+                        },
+                    )
+                    if attempt + 1 >= API_MAX_RETRIES:
+                        raise VpnApiUnavailableError(status) from exc
+                else:
+                    raise
+            else:
+                try:
+                    return response.json()
+                except ValueError:
+                    logger.warning(
+                        "Failed to decode VPN API response as JSON",
+                        extra={"path": path, "method": method},
+                    )
+                    return {}
+
+        await asyncio.sleep(delay)
+        delay *= 2
+
+    raise VpnApiUnavailableError()
+
+
+async def api_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return await _request_with_retry("POST", path, json_payload=payload)
 
 
 async def create_payment_invoice(
@@ -297,6 +386,12 @@ async def create_payment_invoice(
     }
     try:
         return await api_post("/payments/create", payload)
+    except VpnApiUnavailableError as exc:
+        logger.error(
+            "VPN API is unavailable when creating payment invoice",
+            extra={"status": exc.status_code, "plan": plan},
+        )
+        return None
     except httpx.HTTPStatusError as exc:
         logger.exception(
             "Failed to create payment invoice",
@@ -306,18 +401,14 @@ async def create_payment_invoice(
 
 
 async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}"} if SERVICE_TOKEN else {}
-    async with httpx.AsyncClient(timeout=15.0) as http_client:
-        response = await http_client.get(
-            f"{VPN_API_URL.rstrip('/')}{path}", params=params, headers=headers
-        )
-    response.raise_for_status()
-    return response.json()
+    return await _request_with_retry("GET", path, params=params)
 
 
 async def register_user(username: str, chat_id: int, ref: str | None) -> None:
     try:
         await api_post("/users/register", {"username": username, "chat_id": chat_id, "referrer": ref})
+    except VpnApiUnavailableError:
+        logger.error("VPN API is unavailable while registering user")
     except httpx.HTTPStatusError as exc:
         logger.warning("Failed to register user", extra={"status": exc.response.status_code})
 
@@ -328,6 +419,8 @@ async def apply_referral(referrer: str, referee: str, chat_id: int) -> None:
             "/referral/use",
             {"referrer": referrer, "referee": referee, "chat_id": chat_id},
         )
+    except VpnApiUnavailableError:
+        logger.info("Referral service temporarily unavailable")
     except httpx.HTTPStatusError as exc:
         logger.info("Referral not applied", extra={"status": exc.response.status_code})
 
@@ -341,6 +434,9 @@ async def issue_trial_key(username: str, chat_id: int) -> dict[str, Any] | None:
         if not payload.get("ok"):
             return None
         return payload
+    except VpnApiUnavailableError:
+        logger.error("VPN API is unavailable when issuing key")
+        return {"ok": False, "error": "service_unavailable"}
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 409:
             return exc.response.json()
@@ -362,6 +458,11 @@ async def fetch_keys(username: str) -> list[dict[str, Any]]:
         response = await api_get(f"/users/{username}/keys")
         if response.get("ok"):
             return response.get("keys", [])
+    except VpnApiUnavailableError as exc:
+        logger.error(
+            "VPN API is unavailable when fetching keys",
+            extra={"status": exc.status_code},
+        )
     except httpx.HTTPStatusError as exc:
         logger.exception("Failed to fetch keys", extra={"status": exc.response.status_code})
     return []
@@ -372,6 +473,11 @@ async def fetch_referral_stats(username: str) -> dict[str, Any]:
         response = await api_get(f"/users/{username}/referrals")
         if response.get("ok"):
             return response
+    except VpnApiUnavailableError as exc:
+        logger.error(
+            "VPN API is unavailable when fetching referral stats",
+            extra={"status": exc.status_code},
+        )
     except httpx.HTTPStatusError:
         pass
     return {"username": username, "total_referrals": 0, "total_days": 0}
