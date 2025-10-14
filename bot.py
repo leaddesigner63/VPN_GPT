@@ -110,6 +110,36 @@ dp = Dispatcher(storage=MemoryStorage())
 client = OpenAI(api_key=GPT_API_KEY)
 
 
+class _QrMessageTracker:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._messages: dict[int, int] = {}
+
+    async def remember(self, chat_id: int, message_id: int) -> None:
+        async with self._lock:
+            self._messages[chat_id] = message_id
+
+    async def pop(self, chat_id: int) -> int | None:
+        async with self._lock:
+            return self._messages.pop(chat_id, None)
+
+
+_qr_messages = _QrMessageTracker()
+
+
+async def _delete_previous_qr(chat_id: int) -> None:
+    message_id = await _qr_messages.pop(chat_id)
+    if message_id is None:
+        return
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        logger.debug(
+            "Failed to delete previous QR message",
+            extra={"chat_id": chat_id, "message_id": message_id},
+        )
+
+
 class AiFlow(StatesGroup):
     device = State()
     goal = State()
@@ -351,6 +381,7 @@ def build_help_text() -> str:
 
 @dp.message(CommandStart())
 async def handle_start(message: Message, state: FSMContext) -> None:
+    await _delete_previous_qr(message.chat.id)
     await state.clear()
     user = message.from_user
     if user is None:
@@ -379,6 +410,8 @@ async def handle_start(message: Message, state: FSMContext) -> None:
 @dp.callback_query(F.data == MENU_BACK)
 async def handle_menu_back(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     await call.message.edit_text("Выбери действие:", reply_markup=build_main_menu())
     await call.answer()
 
@@ -389,6 +422,8 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     username = user.username or f"id_{user.id}"
     await register_user(username, call.message.chat.id, None)
     payload = await issue_trial_key(username, call.message.chat.id)
@@ -425,10 +460,11 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     await call.message.edit_text(text, reply_markup=build_result_markup(link))
     if link:
         qr = make_qr(link)
-        await call.message.answer_photo(
+        qr_message = await call.message.answer_photo(
             BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
             caption="📱 Отсканируй, чтобы добавить ключ в приложение",
         )
+        await _qr_messages.remember(call.message.chat.id, qr_message.message_id)
     await call.answer("Ключ выдан")
 
 
@@ -438,6 +474,8 @@ async def handle_my_keys(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     username = user.username or f"id_{user.id}"
     keys = await fetch_keys(username)
     if not keys:
@@ -463,6 +501,8 @@ async def handle_pay(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     username = user.username or f"id_{user.id}"
     text = "Выбери тариф: оплата откроется в браузере на сайте vpn-gpt.store."
     keyboard = build_payment_keyboard(username, call.message.chat.id, username)
@@ -476,6 +516,8 @@ async def handle_referrals(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     username = user.username or f"id_{user.id}"
     stats = await fetch_referral_stats(username)
     ref_link = f"https://t.me/{BOT_USERNAME}?start={username}" if BOT_USERNAME else ""
@@ -491,12 +533,16 @@ async def handle_referrals(call: CallbackQuery) -> None:
 
 @dp.callback_query(F.data == MENU_HELP)
 async def handle_help(call: CallbackQuery) -> None:
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     await call.message.edit_text(build_help_text(), reply_markup=build_back_menu())
     await call.answer()
 
 
 @dp.callback_query(F.data == MENU_AI)
 async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     await state.set_state(AiFlow.device)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
@@ -510,6 +556,8 @@ async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
 
 @dp.callback_query(F.data == CANCEL_AI)
 async def handle_ai_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    if call.message:
+        await _delete_previous_qr(call.message.chat.id)
     await state.clear()
     await call.message.edit_text("Ок! Возвращаемся в меню.", reply_markup=build_main_menu())
     await call.answer()
@@ -517,6 +565,7 @@ async def handle_ai_cancel(call: CallbackQuery, state: FSMContext) -> None:
 
 @dp.message(AiFlow.device)
 async def process_ai_device(message: Message, state: FSMContext) -> None:
+    await _delete_previous_qr(message.chat.id)
     await state.update_data(device=message.text.strip())
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
@@ -527,6 +576,7 @@ async def process_ai_device(message: Message, state: FSMContext) -> None:
 
 @dp.message(AiFlow.goal)
 async def process_ai_goal(message: Message, state: FSMContext) -> None:
+    await _delete_previous_qr(message.chat.id)
     await state.update_data(goal=message.text.strip())
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
@@ -537,6 +587,7 @@ async def process_ai_goal(message: Message, state: FSMContext) -> None:
 
 @dp.message(AiFlow.priority)
 async def process_ai_priority(message: Message, state: FSMContext) -> None:
+    await _delete_previous_qr(message.chat.id)
     data = await state.get_data()
     device = data.get("device", "устройство не указано")
     goal = data.get("goal", "цель не указана")
@@ -572,19 +623,22 @@ async def process_ai_priority(message: Message, state: FSMContext) -> None:
 
     if link:
         qr = make_qr(link)
-        await message.answer_photo(
+        qr_message = await message.answer_photo(
             BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
             caption="📱 Отсканируй QR для быстрого подключения",
         )
+        await _qr_messages.remember(message.chat.id, qr_message.message_id)
 
 
 @dp.message(Command("help"))
 async def command_help(message: Message):
+    await _delete_previous_qr(message.chat.id)
     await message.answer(build_help_text(), reply_markup=build_back_menu())
 
 
 @dp.message()
 async def handle_message(message: Message) -> None:
+    await _delete_previous_qr(message.chat.id)
     user = message.from_user
     if user is None or not message.text:
         return
