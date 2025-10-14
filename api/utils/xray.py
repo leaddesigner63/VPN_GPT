@@ -8,10 +8,31 @@ from uuid import uuid4
 
 from api.utils.logging import get_logger
 
+
+def _normalise_service_name(raw: str | None, default: str = "xray") -> str:
+    """Return a clean systemd service name from an environment value."""
+
+    if raw is None:
+        return default
+
+    # Strip comments (everything after '#') and extraneous whitespace.
+    cleaned = raw.split("#", 1)[0].strip()
+    if not cleaned:
+        return default
+
+    return cleaned
+
+
 XRAY_CONFIG = Path(os.getenv("XRAY_CONFIG", "/usr/local/etc/xray/config.json"))
-XRAY_SERVICE = os.getenv("XRAY_SERVICE", "xray")
+_XRAY_SERVICE_RAW = os.getenv("XRAY_SERVICE")
+XRAY_SERVICE = _normalise_service_name(_XRAY_SERVICE_RAW)
 
 logger = get_logger("xray")
+
+if _XRAY_SERVICE_RAW is not None and XRAY_SERVICE != _XRAY_SERVICE_RAW.strip():
+    logger.warning(
+        "Normalised XRAY_SERVICE value", extra={"provided": _XRAY_SERVICE_RAW, "used": XRAY_SERVICE}
+    )
 
 
 class XrayError(RuntimeError):

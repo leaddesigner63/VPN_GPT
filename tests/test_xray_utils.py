@@ -128,3 +128,23 @@ def test_add_client_normalises_email_and_case(tmp_path, monkeypatch):
     clients = _load_config(config_path)["inbounds"][0]["settings"]["clients"]
     assert {client["email"] for client in clients} == {"alice", "bob"}
     assert any(client["id"] == "new-alice" for client in clients if client["email"] == "alice")
+
+
+def test_restart_uses_normalised_service_name(monkeypatch):
+    monkeypatch.setenv("XRAY_SERVICE", "xray.service   # comment to ignore")
+
+    import api.utils.xray as xray_module
+
+    module = importlib.reload(xray_module)
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, check):  # pragma: no cover - signature compatibility
+        calls.append(cmd)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._restart()
+
+    assert calls == [["systemctl", "restart", "xray.service"]]
+    assert module.XRAY_SERVICE == "xray.service"
