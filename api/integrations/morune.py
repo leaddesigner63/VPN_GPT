@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -323,13 +324,21 @@ class MoruneClient:
             "Accept": "application/json",
         }
 
-    def _request(self, method: str, path: str, *, json_payload: Mapping[str, Any]) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_payload: Mapping[str, Any] | None,
+        params: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         try:
             response = self._client.request(
                 method,
                 url,
                 json=json_payload,
+                params=params,
                 headers=self._headers(),
             )
             response.raise_for_status()
@@ -367,7 +376,55 @@ class MoruneClient:
             payload["fail_url"] = fail_url
 
         data = self._request("POST", "/e/api/invoices", json_payload=payload)
-        invoice = data.get("data") or data
+        extracted = self._extract_invoice_fields(
+            payload=data,
+            payment_id=payment_id,
+            fallback_currency=currency,
+        )
+
+        detail_payload = self._recover_invoice_details(
+            payment_id=payment_id,
+            provider_payment_id=extracted["provider_payment_id"],
+            fallback_currency=currency,
+            existing_fields=extracted,
+        )
+
+        raw_payload: dict[str, Any]
+        if detail_payload is not None:
+            raw_payload = {"create": data, "detail": detail_payload}
+        else:
+            raw_payload = data
+
+        provider_payment_id = extracted["provider_payment_id"]
+        payment_url = extracted["payment_url"]
+        status = extracted["status"]
+        amount_value = extracted["amount"]
+        currency_value = extracted["currency"]
+
+        if not provider_payment_id:
+            logger.warning("Morune invoice missing provider payment id", extra={"payment_id": payment_id})
+        if not payment_url:
+            logger.warning("Morune invoice missing payment URL", extra={"payment_id": payment_id})
+
+        return MoruneInvoice(
+            payment_id=payment_id,
+            provider_payment_id=str(provider_payment_id) if provider_payment_id else None,
+            payment_url=payment_url,
+            status=status,
+            amount=amount_value,
+            currency=currency_value,
+            raw=raw_payload,
+        )
+
+    def _extract_invoice_fields(
+        self,
+        *,
+        payload: Mapping[str, Any],
+        payment_id: str,
+        fallback_currency: str | None,
+    ) -> dict[str, Any]:
+        data = payload
+        invoice = payload.get("data") or payload
         provider_payment_id = (
             invoice.get("id")
             or invoice.get("payment_id")
@@ -489,7 +546,7 @@ class MoruneClient:
             or data.get("currency")
             or _search_nested_value(invoice, ["currency", "currency_code", "curr"])
             or _search_nested_value(data, ["currency", "currency_code", "curr"])
-            or currency
+            or fallback_currency
             or ""
         )
         if isinstance(raw_currency, str):
@@ -499,25 +556,108 @@ class MoruneClient:
             coerced_currency = _stringify(raw_currency, extra_keys=["code", "currency"])
             currency_value = coerced_currency.upper() if coerced_currency else None
 
+        if not currency_value and fallback_currency:
+            currency_value = fallback_currency.strip().upper() or None
+
         provider_payment_id = _stringify(provider_payment_id)
         payment_url = _stringify(payment_url, extra_keys=["checkout", "payment"])
         payment_url = _coerce_url(payment_url, base_url=self.base_url)
         status = str(status).lower() if status else "pending"
 
-        if not provider_payment_id:
-            logger.warning("Morune invoice missing provider payment id", extra={"payment_id": payment_id})
-        if not payment_url:
-            logger.warning("Morune invoice missing payment URL", extra={"payment_id": payment_id})
+        return {
+            "provider_payment_id": provider_payment_id,
+            "payment_url": payment_url,
+            "status": status,
+            "amount": _parse_amount(amount_value),
+            "currency": currency_value,
+        }
 
-        return MoruneInvoice(
-            payment_id=payment_id,
-            provider_payment_id=str(provider_payment_id) if provider_payment_id else None,
-            payment_url=payment_url,
-            status=status,
-            amount=_parse_amount(amount_value),
-            currency=currency_value,
-            raw=data,
-        )
+    @staticmethod
+    def _merge_invoice_fields(target: dict[str, Any], source: dict[str, Any]) -> None:
+        for key in ("provider_payment_id", "payment_url", "status", "currency"):
+            value = source.get(key)
+            if value:
+                target[key] = value
+        amount_value = source.get("amount")
+        if amount_value is not None:
+            target["amount"] = amount_value
+
+    def _recover_invoice_details(
+        self,
+        *,
+        payment_id: str,
+        provider_payment_id: str | None,
+        fallback_currency: str | None,
+        existing_fields: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if existing_fields.get("payment_url"):
+            return None
+
+        def _should_stop(fields: dict[str, Any]) -> bool:
+            if fields.get("payment_url"):
+                return True
+            if fields.get("status") and fields["status"] not in {"pending", "waiting_payment", "created"}:
+                return True
+            return False
+
+        attempts = 3
+        delay = max(0.2, min(self.timeout / 3, 1.5))
+
+        if provider_payment_id:
+            for attempt in range(1, attempts + 1):
+                try:
+                    payload = self._request(
+                        "GET",
+                        f"/e/api/invoices/{provider_payment_id}",
+                        json_payload=None,
+                        params={"project_id": self.project_id},
+                    )
+                except MoruneAPIError:
+                    logger.warning(
+                        "Morune invoice lookup failed",
+                        extra={"payment_id": payment_id, "provider_payment_id": provider_payment_id, "attempt": attempt},
+                    )
+                    break
+
+                detail_fields = self._extract_invoice_fields(
+                    payload=payload,
+                    payment_id=payment_id,
+                    fallback_currency=fallback_currency,
+                )
+                self._merge_invoice_fields(existing_fields, detail_fields)
+                if _should_stop(existing_fields):
+                    return payload
+                if attempt < attempts:
+                    time.sleep(delay)
+
+        search_params = {"order_id": payment_id, "project_id": self.project_id}
+
+        for attempt in range(1, attempts + 1):
+            try:
+                payload = self._request(
+                    "GET",
+                    "/e/api/invoices",
+                    json_payload=None,
+                    params=search_params,
+                )
+            except MoruneAPIError:
+                logger.warning(
+                    "Morune invoice search failed", extra={"payment_id": payment_id, "attempt": attempt}
+                )
+                break
+
+            detail_fields = self._extract_invoice_fields(
+                payload=payload,
+                payment_id=payment_id,
+                fallback_currency=fallback_currency,
+            )
+            self._merge_invoice_fields(existing_fields, detail_fields)
+            if _should_stop(existing_fields):
+                return payload
+            if attempt < attempts:
+                time.sleep(delay)
+
+        return None
 
     def verify_signature(self, *, body: bytes, signature: str | None) -> None:
         if not self.webhook_secret:

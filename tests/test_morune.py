@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from importlib import util
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -198,3 +199,177 @@ def test_create_invoice_handles_html_links(monkeypatch, morune_client):
     assert invoice.status == "created"
     assert invoice.amount is None
     assert invoice.currency == "RUB"
+
+
+def test_create_invoice_fetches_details_when_missing_url(monkeypatch, morune_client):
+    responses = iter(
+        [
+            {
+                "data": {
+                    "id": "inv-006",
+                    "attributes": {
+                        "status": "pending",
+                        "amount": 300,
+                        "currency": "usd",
+                    },
+                }
+            },
+            {
+                "data": {
+                    "attributes": {
+                        "paymentLink": "https://pay.example/from-detail",
+                        "status": "waiting_payment",
+                        "amount": 305,
+                        "currency": "eur",
+                    }
+                }
+            },
+        ]
+    )
+
+    def fake_request(method, path, *, json_payload=None, params=None):
+        payload = next(responses)
+        if method == "GET":
+            assert path == "/e/api/invoices/inv-006"
+            assert json_payload is None
+            assert params == {"project_id": "proj"}
+        else:
+            assert method == "POST"
+            assert path == "/e/api/invoices"
+            assert params is None
+        return payload
+
+    monkeypatch.setattr(morune_client, "_request", fake_request)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-6",
+        amount=300,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.provider_payment_id == "inv-006"
+    assert invoice.payment_url == "https://pay.example/from-detail"
+    assert invoice.status == "waiting_payment"
+    assert invoice.amount == 305
+    assert invoice.currency == "EUR"
+    assert invoice.raw["create"]["data"]["id"] == "inv-006"
+    assert invoice.raw["detail"]["data"]["attributes"]["paymentLink"] == "https://pay.example/from-detail"
+
+
+def test_create_invoice_polls_for_payment_url(monkeypatch, morune_client):
+    post_payload = {
+        "data": {
+            "id": "inv-007",
+            "attributes": {
+                "status": "pending",
+                "amount": 100,
+                "currency": "usd",
+            },
+        }
+    }
+
+    detail_payloads = iter(
+        [
+            {"data": {"id": "inv-007", "attributes": {"status": "pending"}}},
+            {
+                "data": {
+                    "id": "inv-007",
+                    "attributes": {
+                        "status": "waiting_payment",
+                        "payment_url": "https://pay.example/polling",
+                        "amount": 110,
+                        "currency": "eur",
+                    },
+                }
+            },
+        ]
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_request(method, path, *, json_payload=None, params=None):
+        calls.append((method, path))
+        if method == "POST":
+            assert path == "/e/api/invoices"
+            assert params is None
+            return post_payload
+        assert method == "GET"
+        assert path == "/e/api/invoices/inv-007"
+        assert params == {"project_id": "proj"}
+        next_payload = next(detail_payloads)
+        return next_payload
+
+    monkeypatch.setattr(morune_client, "_request", fake_request)
+    monkeypatch.setattr(morune.time, "sleep", lambda _: None)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-7",
+        amount=100,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.payment_url == "https://pay.example/polling"
+    assert invoice.amount == 110
+    assert invoice.currency == "EUR"
+    assert calls.count(("GET", "/e/api/invoices/inv-007")) == 2
+
+
+def test_create_invoice_searches_by_order_id(monkeypatch, morune_client):
+    post_payload = {
+        "data": {
+            "attributes": {
+                "status": "pending",
+                "amount": 250,
+                "currency": "usd",
+            }
+        }
+    }
+
+    search_calls: list[dict[str, Any] | None] = []
+
+    def fake_request(method, path, *, json_payload=None, params=None):
+        if method == "POST":
+            return post_payload
+        assert method == "GET"
+        assert path == "/e/api/invoices"
+        assert params and params["order_id"] == "order-8"
+        assert params["project_id"] == "proj"
+        search_calls.append(params)
+        return {
+            "data": {
+                "id": "inv-008",
+                "attributes": {
+                    "paymentLink": "https://pay.example/search",
+                    "status": "waiting_payment",
+                    "amount": 255,
+                    "currency": "eur",
+                },
+            }
+        }
+
+    monkeypatch.setattr(morune_client, "_request", fake_request)
+    monkeypatch.setattr(morune.time, "sleep", lambda _: None)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-8",
+        amount=250,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.provider_payment_id == "inv-008"
+    assert invoice.payment_url == "https://pay.example/search"
+    assert invoice.amount == 255
+    assert invoice.currency == "EUR"
+    assert search_calls and search_calls[0]["order_id"] == "order-8"
