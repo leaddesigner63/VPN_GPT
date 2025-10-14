@@ -198,3 +198,60 @@ def test_create_invoice_handles_html_links(monkeypatch, morune_client):
     assert invoice.status == "created"
     assert invoice.amount is None
     assert invoice.currency == "RUB"
+
+
+def test_create_invoice_fetches_details_when_missing_url(monkeypatch, morune_client):
+    responses = iter(
+        [
+            {
+                "data": {
+                    "id": "inv-006",
+                    "attributes": {
+                        "status": "pending",
+                        "amount": 300,
+                        "currency": "usd",
+                    },
+                }
+            },
+            {
+                "data": {
+                    "attributes": {
+                        "paymentLink": "https://pay.example/from-detail",
+                        "status": "waiting_payment",
+                        "amount": 305,
+                        "currency": "eur",
+                    }
+                }
+            },
+        ]
+    )
+
+    def fake_request(method, path, *, json_payload=None):
+        payload = next(responses)
+        if method == "GET":
+            assert path == "/e/api/invoices/inv-006"
+            assert json_payload is None
+        else:
+            assert method == "POST"
+            assert path == "/e/api/invoices"
+        return payload
+
+    monkeypatch.setattr(morune_client, "_request", fake_request)
+
+    invoice = morune_client.create_invoice(
+        payment_id="order-6",
+        amount=300,
+        currency="rub",
+        description="Test",
+        metadata=None,
+        success_url=None,
+        fail_url=None,
+    )
+
+    assert invoice.provider_payment_id == "inv-006"
+    assert invoice.payment_url == "https://pay.example/from-detail"
+    assert invoice.status == "waiting_payment"
+    assert invoice.amount == 305
+    assert invoice.currency == "EUR"
+    assert invoice.raw["create"]["data"]["id"] == "inv-006"
+    assert invoice.raw["detail"]["data"]["attributes"]["paymentLink"] == "https://pay.example/from-detail"
