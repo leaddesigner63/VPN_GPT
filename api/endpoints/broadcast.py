@@ -1,45 +1,59 @@
 import os
-import sqlite3
+from typing import Any
 
 import requests
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
+from pydantic import BaseModel
 
+from api.utils import db
 from api.utils.logging import get_logger
 
 router = APIRouter()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 logger = get_logger("endpoints.broadcast")
 
+class BroadcastRequest(BaseModel):
+    text: str
+
+
 @router.post("/notify/broadcast")
-async def notify_broadcast(request: Request):
+async def notify_broadcast(payload: BroadcastRequest) -> dict[str, Any]:
     """Массовая рассылка сообщений всем пользователям из tg_users."""
-    data = await request.json()
-    text = data.get("text")
+    text = (payload.text or "").strip()
     if not text:
         logger.warning("Broadcast request missing text")
         return {"ok": False, "error": "missing_text"}
 
-    logger.info("Starting broadcast to Telegram users")
-    conn = sqlite3.connect("/root/VPN_GPT/dialogs.db")
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS tg_users (username TEXT, chat_id INTEGER)")
-    cur.execute("SELECT chat_id FROM tg_users")
-    rows = cur.fetchall()
-    conn.close()
+    if not BOT_TOKEN:
+        logger.error("Broadcast request rejected: BOT_TOKEN is not configured")
+        return {"ok": False, "error": "bot_token_not_configured"}
 
+    targets = db.list_broadcast_targets()
+    if not targets:
+        logger.info("No Telegram users registered for broadcast")
+        return {"ok": True, "sent": 0, "total": 0}
+
+    logger.info("Starting broadcast to Telegram users", extra={"count": len(targets)})
     sent = 0
-    for (chat_id,) in rows:
+    for target in targets:
+        chat_id = target["chat_id"]
         resp = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={"chat_id": chat_id, "text": text},
+            timeout=10,
         )
         if resp.status_code == 200:
             sent += 1
         else:
             logger.error(
                 "Failed to send broadcast message",
-                extra={"chat_id": chat_id, "status_code": resp.status_code, "response": resp.text},
+                extra={
+                    "chat_id": chat_id,
+                    "username": target.get("username"),
+                    "status_code": resp.status_code,
+                    "response": resp.text,
+                },
             )
 
-    logger.info("Broadcast complete", extra={"sent": sent, "total": len(rows)})
-    return {"ok": True, "sent": sent, "total": len(rows)}
+    logger.info("Broadcast complete", extra={"sent": sent, "total": len(targets)})
+    return {"ok": True, "sent": sent, "total": len(targets)}

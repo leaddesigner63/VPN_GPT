@@ -1,31 +1,16 @@
-import datetime
-import sqlite3
+from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
+from api.utils import db
 from api.utils.logging import get_logger
 
 router = APIRouter()
 logger = get_logger("endpoints.expiring")
 
 @router.get("/users/expiring")
-async def list_expiring_users():
-    """Возвращает пользователей, у которых срок действия VPN истекает в ближайшие 3 дня."""
-    conn = sqlite3.connect("/root/VPN_GPT/dialogs.db")
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS vpn_keys (
-            username TEXT,
-            uuid TEXT,
-            expires TEXT,
-            active INTEGER DEFAULT 0
-        )
-    """)
-    today = datetime.date.today()
-    limit = (today + datetime.timedelta(days=3)).strftime("%Y-%m-%d")
-    cur.execute("SELECT username, uuid, expires FROM vpn_keys WHERE expires <= ? AND active=1", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    result = [{"username": u, "uuid": x, "expires": e} for u, x, e in rows]
-    logger.info("Found %d expiring users", len(result))
-    return {"ok": True, "expiring": result}
+async def list_expiring_users(days: int = Query(default=3, ge=1, le=365)) -> dict[str, Any]:
+    """Возвращает пользователей, у которых срок действия VPN истекает в ближайшие ``days`` дней."""
+    records = db.list_expiring_keys(within_days=days)
+    logger.info("Found expiring users", extra={"count": len(records), "days": days})
+    return {"ok": True, "expiring": records}
