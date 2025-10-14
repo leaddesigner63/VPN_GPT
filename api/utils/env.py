@@ -16,6 +16,22 @@ from api.utils.logging import get_logger
 
 logger = get_logger("env")
 
+_SERVER_ROOT = Path("/root/VPN_GPT")
+_SERVER_ENV_PATH = _SERVER_ROOT / ".env"
+
+
+def resolve_env_path() -> Path:
+    """Return the location of the project `.env` file."""
+
+    override = os.getenv("ENV_PATH")
+    if override:
+        return Path(override)
+
+    if _SERVER_ENV_PATH.exists():
+        return _SERVER_ENV_PATH
+
+    return Path(__file__).resolve().parents[2] / ".env"
+
 
 def _candidate_keys() -> Iterable[str]:
     """Return the environment keys that may contain the VLESS host."""
@@ -71,7 +87,7 @@ def get_vless_host(default: str = "vpn-gpt.store") -> str:
         logger.debug("Resolved VLESS host from environment: %s", host)
         return host
 
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+    env_path = resolve_env_path()
     if env_path.exists():
         values = dotenv_values(env_path)
         for key in _candidate_keys():
@@ -84,5 +100,5 @@ def get_vless_host(default: str = "vpn-gpt.store") -> str:
     return default
 
 
-__all__ = ["get_vless_host"]
+__all__ = ["get_vless_host", "resolve_env_path"]
 

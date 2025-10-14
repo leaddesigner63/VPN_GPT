@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Dict
 
 from dotenv import load_dotenv
 
 from api.utils.logging import get_logger
+from api.utils.env import resolve_env_path
 
 logger = get_logger("config")
 
-_BASE_DIR = Path(__file__).resolve().parents[2]
-_ENV_PATH = Path(os.getenv("ENV_PATH", _BASE_DIR / ".env"))
+_ENV_PATH = resolve_env_path()
 
 if _ENV_PATH.exists():
     load_dotenv(str(_ENV_PATH), override=True)
