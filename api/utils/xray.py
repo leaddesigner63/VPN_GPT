@@ -23,6 +23,36 @@ def _normalise_service_name(raw: str | None, default: str = "xray") -> str:
     return cleaned
 
 
+def _service_name_candidates(preferred: str, default: str = "xray") -> list[str]:
+    """Return possible service names that can be used to restart Xray.
+
+    The function expands common variations like ``xray`` vs ``xray.service``
+    while keeping the order deterministic and removing duplicates.
+    """
+
+    candidates: list[str] = []
+
+    def _add(name: str | None) -> None:
+        if name and name not in candidates:
+            candidates.append(name)
+
+    _add(preferred)
+
+    if preferred.endswith(".service"):
+        base = preferred[: -len(".service")]
+    else:
+        base = preferred
+
+    _add(base)
+    _add(f"{base}.service")
+
+    if default:
+        _add(default)
+        _add(f"{default}.service")
+
+    return candidates
+
+
 XRAY_CONFIG = Path(os.getenv("XRAY_CONFIG", "/usr/local/etc/xray/config.json"))
 _XRAY_SERVICE_RAW = os.getenv("XRAY_SERVICE")
 XRAY_SERVICE = _normalise_service_name(_XRAY_SERVICE_RAW)
@@ -58,12 +88,35 @@ def _save(cfg: dict) -> None:
 
 
 def _restart() -> None:
-    logger.info("Restarting Xray service '%s'", XRAY_SERVICE)
-    try:
-        subprocess.run(["systemctl", "restart", XRAY_SERVICE], check=True)
-    except subprocess.CalledProcessError as exc:
-        logger.exception("Failed to restart Xray service", extra={"service": XRAY_SERVICE})
-        raise XrayRestartError("xray_restart_failed") from exc
+    candidates = _service_name_candidates(XRAY_SERVICE)
+    logger.info(
+        "Restarting Xray service", extra={"preferred": XRAY_SERVICE, "candidates": candidates}
+    )
+
+    errors: list[dict] = []
+
+    for service_name in candidates:
+        try:
+            subprocess.run(["systemctl", "restart", service_name], check=True)
+        except subprocess.CalledProcessError as exc:
+            logger.warning(
+                "Failed to restart Xray service candidate",
+                extra={"service": service_name, "returncode": exc.returncode},
+            )
+            errors.append({"service": service_name, "returncode": exc.returncode})
+            continue
+        else:
+            if service_name != XRAY_SERVICE:
+                logger.info(
+                    "Restarted Xray service using fallback name", extra={"service": service_name}
+                )
+            return
+
+    logger.exception(
+        "Failed to restart Xray service after trying all candidates",
+        extra={"candidates": candidates, "errors": errors},
+    )
+    raise XrayRestartError("xray_restart_failed")
 
 
 def _get_vless_inbound(cfg: dict) -> dict:
