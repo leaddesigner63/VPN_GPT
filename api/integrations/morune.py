@@ -254,32 +254,59 @@ class MoruneClient:
             invoice.get("url")
             or invoice.get("payment_url")
             or invoice.get("redirect_url")
-            or _search_nested_value(invoice, [
-                "payment_url",
-                "paymentUrl",
-                "redirect_url",
-                "redirectUrl",
-                "checkout_url",
-                "checkoutUrl",
-                "pay_url",
-                "payUrl",
-                "url",
-                "href",
-                "link",
-            ])
-            or _search_nested_value(data, [
-                "payment_url",
-                "paymentUrl",
-                "redirect_url",
-                "redirectUrl",
-                "checkout_url",
-                "checkoutUrl",
-                "pay_url",
-                "payUrl",
-                "url",
-                "href",
-                "link",
-            ])
+            or invoice.get("invoice_url")
+            or invoice.get("cashier_url")
+            or invoice.get("payment_link")
+            or _search_nested_value(
+                invoice,
+                [
+                    "payment_url",
+                    "paymentUrl",
+                    "redirect_url",
+                    "redirectUrl",
+                    "checkout_url",
+                    "checkoutUrl",
+                    "pay_url",
+                    "payUrl",
+                    "payment_link",
+                    "paymentLink",
+                    "invoice_url",
+                    "invoiceUrl",
+                    "cashier_url",
+                    "cashierUrl",
+                    "iframe_url",
+                    "iframeUrl",
+                    "url",
+                    "href",
+                    "link",
+                    "page",
+                ],
+            )
+            or _search_nested_value(
+                data,
+                [
+                    "payment_url",
+                    "paymentUrl",
+                    "redirect_url",
+                    "redirectUrl",
+                    "checkout_url",
+                    "checkoutUrl",
+                    "pay_url",
+                    "payUrl",
+                    "payment_link",
+                    "paymentLink",
+                    "invoice_url",
+                    "invoiceUrl",
+                    "cashier_url",
+                    "cashierUrl",
+                    "iframe_url",
+                    "iframeUrl",
+                    "url",
+                    "href",
+                    "link",
+                    "page",
+                ],
+            )
         )
         status = (
             invoice.get("status")
