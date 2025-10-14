@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import importlib
+import subprocess
 import sys
 
 
@@ -148,3 +149,27 @@ def test_restart_uses_normalised_service_name(monkeypatch):
 
     assert calls == [["systemctl", "restart", "xray.service"]]
     assert module.XRAY_SERVICE == "xray.service"
+
+
+def test_restart_falls_back_to_alternative_names(monkeypatch):
+    monkeypatch.setenv("XRAY_SERVICE", "xray.service   # comment to ignore")
+
+    import api.utils.xray as xray_module
+
+    module = importlib.reload(xray_module)
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, check):  # pragma: no cover - signature compatibility
+        calls.append(cmd)
+        if cmd[-1] == "xray.service":
+            raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._restart()
+
+    assert calls == [
+        ["systemctl", "restart", "xray.service"],
+        ["systemctl", "restart", "xray"],
+    ]
