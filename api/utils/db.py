@@ -742,6 +742,58 @@ def list_expiring_keys(*, within_days: int = 3) -> list[dict]:
     return result
 
 
+def list_expired_keys() -> list[dict]:
+    """Return active VPN keys whose expiry date is in the past."""
+
+    cutoff = _utcnow().isoformat()
+
+    def _operation() -> list[sqlite3.Row]:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT username, chat_id, uuid, link, expires_at
+                FROM vpn_keys
+                WHERE active=1 AND expires_at < ?
+                ORDER BY expires_at ASC
+                """,
+                (cutoff,),
+            )
+            return cur.fetchall()
+
+    rows = _run_with_schema_retry(_operation)
+    expired: list[dict] = []
+    for row in rows:
+        expires_raw = row["expires_at"]
+        try:
+            expires_dt = datetime.fromisoformat(expires_raw)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to parse expiry for expired key",
+                extra={"username": row["username"], "expires_at": expires_raw},
+            )
+            expires_iso = expires_raw
+        else:
+            expires_iso = expires_dt.replace(microsecond=0).isoformat()
+
+        expired.append(
+            {
+                "username": row["username"],
+                "chat_id": row["chat_id"],
+                "uuid": row["uuid"],
+                "link": row["link"],
+                "expires_at": expires_iso,
+            }
+        )
+
+    if expired:
+        logger.info(
+            "Found expired VPN keys",
+            extra={"count": len(expired)},
+        )
+
+    return expired
+
+
 def referral_bonus_exists(referrer: str, referee: str) -> bool:
     def _operation() -> bool:
         with connect() as con:
@@ -967,6 +1019,7 @@ __all__ = [
     "update_payment_status",
     "log_referral_bonus",
     "list_expiring_keys",
+    "list_expired_keys",
     "referral_bonus_exists",
     "get_referral_stats",
     "extend_active_key",

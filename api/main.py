@@ -12,7 +12,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from api.utils.logging import configure_logging, get_logger
-from api.config import BOT_PAYMENT_URL
+from api.config import BOT_PAYMENT_URL, EXPIRED_KEY_POLL_SECONDS
 
 # === Initialization ===
 load_dotenv()
@@ -48,6 +48,10 @@ if origins:
 # === Routers ===
 from api.endpoints import admin, notify, payments, referrals, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
+from api.utils.expired_keys import ExpiredKeyMonitor  # noqa: E402
+
+
+expired_key_monitor = ExpiredKeyMonitor(interval_seconds=EXPIRED_KEY_POLL_SECONDS)
 
 
 @app.on_event("startup")
@@ -57,6 +61,7 @@ def ensure_database() -> None:
     db.init_db()
     db.auto_update_missing_fields()
     logger.info("Database initialisation complete")
+    expired_key_monitor.start()
 
 
 # === Router registration ===
@@ -66,6 +71,14 @@ app.include_router(payments.router)
 app.include_router(referrals.router)
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+
+
+@app.on_event("shutdown")
+def stop_background_tasks() -> None:
+    """Ensure background monitors are stopped when the application shuts down."""
+
+    logger.info("Stopping expired key monitor")
+    expired_key_monitor.stop()
 
 
 # === Health check ===
