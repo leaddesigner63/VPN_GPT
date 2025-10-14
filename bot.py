@@ -643,7 +643,7 @@ async def handle_message(message: Message) -> None:
     if user is None or not message.text:
         return
     reply = await ask_gpt(message.chat.id, message.text)
-    await message.answer(reply)
+    await message.answer(reply, reply_markup=build_back_menu())
 
 
 async def on_startup() -> None:
