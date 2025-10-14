@@ -5,9 +5,10 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import httpx
+from collections.abc import Mapping, Sequence
 
 from api.utils.logging import get_logger
 
@@ -91,6 +92,79 @@ def _parse_datetime(value: Any) -> dt.datetime | None:
     return parsed.replace(microsecond=0)
 
 
+def _normalise_key(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _is_sequence(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _search_nested_value(payload: Any, keys: Sequence[str]) -> Any | None:
+    """Return the first non-empty value for keys inside ``payload``.
+
+    Morune менял структуру ответа несколько раз: поля могли оказаться внутри
+    ``data.attributes``, ``links.checkout`` или других вложенных словарей.
+    Чтобы не завязываться на конкретной схеме, обходим структуру в глубину и
+    возвращаем первое осмысленное значение.
+    """
+
+    if payload is None:
+        return None
+
+    target_keys = {_normalise_key(key) for key in keys}
+    skip_containers = {_normalise_key(name) for name in ("metadata", "meta")}
+    stack: list[Any] = [payload]
+    seen: set[int] = set()
+
+    while stack:
+        current = stack.pop()
+        ident = id(current)
+        if ident in seen:
+            continue
+        seen.add(ident)
+
+        if isinstance(current, Mapping):
+            for raw_key, value in current.items():
+                norm_key = _normalise_key(str(raw_key))
+                if norm_key in target_keys and value not in (None, ""):
+                    if isinstance(value, Mapping) or _is_sequence(value):
+                        stack.append(value)
+                        continue
+                    return value
+            for raw_key, value in current.items():
+                norm_key = _normalise_key(str(raw_key))
+                if norm_key in skip_containers:
+                    continue
+                if isinstance(value, Mapping) or _is_sequence(value):
+                    stack.append(value)
+        elif _is_sequence(current):
+            for item in current:
+                if isinstance(item, Mapping) or _is_sequence(item):
+                    stack.append(item)
+
+    return None
+
+
+def _stringify(value: Any, *, extra_keys: Sequence[str] | None = None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, Mapping) or _is_sequence(value):
+        keys = ["url", "href", "link", "value"]
+        if extra_keys:
+            keys.extend(extra_keys)
+        nested = _search_nested_value(value, keys)
+        if nested is None or nested is value:
+            return None
+        return _stringify(nested, extra_keys=extra_keys)
+    return str(value).strip() or None
+
+
 class MoruneClient:
     """Minimal HTTP client for Morune payment API."""
 
@@ -169,11 +243,77 @@ class MoruneClient:
 
         data = self._request("POST", "/e/api/invoices", json_payload=payload)
         invoice = data.get("data") or data
-        provider_payment_id = invoice.get("id") or invoice.get("payment_id") or invoice.get("uuid")
-        payment_url = invoice.get("url") or invoice.get("payment_url") or invoice.get("redirect_url")
-        status = invoice.get("status") or data.get("status") or "pending"
-        amount_value = invoice.get("amount") or invoice.get("total") or data.get("amount")
-        currency_value = (invoice.get("currency") or data.get("currency") or currency or "").upper() or None
+        provider_payment_id = (
+            invoice.get("id")
+            or invoice.get("payment_id")
+            or invoice.get("uuid")
+            or _search_nested_value(invoice, ["payment_id", "paymentId", "invoice_id", "invoiceId", "order_id", "orderId", "uuid", "id"])
+            or _search_nested_value(data, ["payment_id", "paymentId", "invoice_id", "invoiceId", "order_id", "orderId", "uuid", "id"])
+        )
+        payment_url = (
+            invoice.get("url")
+            or invoice.get("payment_url")
+            or invoice.get("redirect_url")
+            or _search_nested_value(invoice, [
+                "payment_url",
+                "paymentUrl",
+                "redirect_url",
+                "redirectUrl",
+                "checkout_url",
+                "checkoutUrl",
+                "pay_url",
+                "payUrl",
+                "url",
+                "href",
+                "link",
+            ])
+            or _search_nested_value(data, [
+                "payment_url",
+                "paymentUrl",
+                "redirect_url",
+                "redirectUrl",
+                "checkout_url",
+                "checkoutUrl",
+                "pay_url",
+                "payUrl",
+                "url",
+                "href",
+                "link",
+            ])
+        )
+        status = (
+            invoice.get("status")
+            or data.get("status")
+            or _search_nested_value(invoice, ["status", "state"])
+            or _search_nested_value(data, ["status", "state"])
+            or "pending"
+        )
+        amount_value = (
+            invoice.get("amount")
+            or invoice.get("total")
+            or data.get("amount")
+            or data.get("total")
+            or _search_nested_value(invoice, ["amount", "total", "sum", "value"])
+            or _search_nested_value(data, ["amount", "total", "sum", "value"])
+        )
+        raw_currency = (
+            invoice.get("currency")
+            or data.get("currency")
+            or _search_nested_value(invoice, ["currency", "currency_code", "curr"])
+            or _search_nested_value(data, ["currency", "currency_code", "curr"])
+            or currency
+            or ""
+        )
+        if isinstance(raw_currency, str):
+            stripped_currency = raw_currency.strip()
+            currency_value = stripped_currency.upper() if stripped_currency else None
+        else:
+            coerced_currency = _stringify(raw_currency, extra_keys=["code", "currency"])
+            currency_value = coerced_currency.upper() if coerced_currency else None
+
+        provider_payment_id = _stringify(provider_payment_id)
+        payment_url = _stringify(payment_url, extra_keys=["checkout", "payment"])
+        status = str(status).lower() if status else "pending"
 
         if not provider_payment_id:
             logger.warning("Morune invoice missing provider payment id", extra={"payment_id": payment_id})
@@ -183,8 +323,8 @@ class MoruneClient:
         return MoruneInvoice(
             payment_id=payment_id,
             provider_payment_id=str(provider_payment_id) if provider_payment_id else None,
-            payment_url=str(payment_url) if payment_url else None,
-            status=str(status).lower(),
+            payment_url=payment_url,
+            status=status,
             amount=_parse_amount(amount_value),
             currency=currency_value,
             raw=data,
