@@ -29,16 +29,35 @@ def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     return False
 
 
-def _run_with_schema_retry(operation: Callable[[], T]) -> T:
+def _repair_database(error: sqlite3.OperationalError, *, db_path: Path) -> bool:
+    message = str(error).lower()
+    if "no such table" in message:
+        logger.warning(
+            "Missing SQLite table detected; reinitialising schema",
+            extra={"error": str(error), "path": str(db_path)},
+        )
+        init_db(db_path=db_path)
+        auto_update_missing_fields(db_path=db_path)
+        return True
+
+    if _needs_schema_repair(error):
+        logger.warning(
+            "Database schema mismatch detected; attempting automatic migration",
+            extra={"error": str(error), "path": str(db_path)},
+        )
+        auto_update_missing_fields(db_path=db_path)
+        return True
+
+    return False
+
+
+def _run_with_schema_retry(operation: Callable[[], T], *, db_path: Path | str | None = None) -> T:
+    resolved = Path(db_path or DB_PATH)
     try:
         return operation()
     except sqlite3.OperationalError as exc:
-        if not _needs_schema_repair(exc):
+        if not _repair_database(exc, db_path=resolved):
             raise
-        logger.warning(
-            "Database schema mismatch detected; attempting automatic migration", extra={"error": str(exc)}
-        )
-        auto_update_missing_fields()
         return operation()
 
 INIT_SQL = """
@@ -160,12 +179,13 @@ def connect(*, autocommit: bool = True, db_path: Path | str | None = None) -> It
         con.close()
 
 
-def init_db() -> None:
-    logger.info("Ensuring SQLite schema exists", extra={"path": str(DB_PATH)})
-    with connect() as con:
+def init_db(*, db_path: Path | str | None = None) -> None:
+    resolved = Path(db_path or DB_PATH)
+    logger.info("Ensuring SQLite schema exists", extra={"path": str(resolved)})
+    with connect(db_path=resolved) as con:
         con.executescript(INIT_SQL)
         _apply_indexes(con)
-    logger.info("Database initialisation complete")
+    logger.info("Database initialisation complete", extra={"path": str(resolved)})
 
 
 def _utcnow() -> datetime:
@@ -219,45 +239,57 @@ def normalise_username(raw: str | None) -> str:
 def upsert_user(username: str, chat_id: int, *, referrer: str | None = None) -> None:
     username = normalise_username(username)
     now = _utcnow().isoformat()
-    with connect() as con:
-        con.execute(
-            """
-            INSERT INTO tg_users (username, chat_id, referrer, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(username)
-            DO UPDATE SET
-                chat_id=excluded.chat_id,
-                updated_at=excluded.updated_at,
-                referrer=COALESCE(tg_users.referrer, excluded.referrer)
-            """,
-            (username, chat_id, referrer, now, now),
-        )
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT INTO tg_users (username, chat_id, referrer, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(username)
+                DO UPDATE SET
+                    chat_id=excluded.chat_id,
+                    updated_at=excluded.updated_at,
+                    referrer=COALESCE(tg_users.referrer, excluded.referrer)
+                """,
+                (username, chat_id, referrer, now, now),
+            )
+
+    _run_with_schema_retry(_operation)
     logger.info("Stored Telegram user", extra={"username": username, "chat_id": chat_id})
 
 
 def get_user(username: str) -> dict | None:
-    with connect() as con:
-        cur = con.execute("SELECT * FROM tg_users WHERE username=?", (normalise_username(username),))
-        row = cur.fetchone()
-    return _row_to_dict(row)
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute(
+                "SELECT * FROM tg_users WHERE username=?",
+                (normalise_username(username),),
+            )
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    return _run_with_schema_retry(_operation)
 
 
 def set_user_referrer(username: str, referrer: str) -> None:
     username = normalise_username(username)
     referrer = normalise_username(referrer)
     now = _utcnow().isoformat()
-    with connect() as con:
-        con.execute(
-            """
-            INSERT INTO tg_users (username, chat_id, referrer, created_at, updated_at)
-            VALUES (?, 0, ?, ?, ?)
-            ON CONFLICT(username)
-            DO UPDATE SET
-                referrer=excluded.referrer,
-                updated_at=excluded.updated_at
-            """,
-            (username, referrer, now, now),
-        )
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT INTO tg_users (username, chat_id, referrer, created_at, updated_at)
+                VALUES (?, 0, ?, ?, ?)
+                ON CONFLICT(username)
+                DO UPDATE SET
+                    referrer=excluded.referrer,
+                    updated_at=excluded.updated_at
+                """,
+                (username, referrer, now, now),
+            )
+
+    _run_with_schema_retry(_operation)
     logger.info("Updated referrer", extra={"username": username, "referrer": referrer})
 
 
@@ -296,38 +328,47 @@ def get_active_key(username: str) -> dict | None:
 
 
 def get_key_by_uuid(uuid_value: str) -> dict | None:
-    with connect() as con:
-        cur = con.execute("SELECT * FROM vpn_keys WHERE uuid=?", (uuid_value,))
-        row = cur.fetchone()
-    return _row_to_dict(row)
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute("SELECT * FROM vpn_keys WHERE uuid=?", (uuid_value,))
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    return _run_with_schema_retry(_operation)
 
 
 def list_broadcast_targets() -> list[dict]:
-    with connect() as con:
-        cur = con.execute(
-            """
-            SELECT chat_id, username
-            FROM tg_users
-            WHERE chat_id IS NOT NULL AND chat_id <> 0
-            ORDER BY updated_at DESC
-            """
-        )
-        rows = cur.fetchall()
-    return [
-        {"chat_id": row["chat_id"], "username": row["username"]}
-        for row in rows
-        if row["chat_id"] is not None
-    ]
+    def _operation() -> list[dict]:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT chat_id, username
+                FROM tg_users
+                WHERE chat_id IS NOT NULL AND chat_id <> 0
+                ORDER BY updated_at DESC
+                """
+            )
+            rows = cur.fetchall()
+        return [
+            {"chat_id": row["chat_id"], "username": row["username"]}
+            for row in rows
+            if row["chat_id"] is not None
+        ]
+
+    return _run_with_schema_retry(_operation)
 
 
 def list_user_keys(username: str) -> list[dict]:
-    with connect() as con:
-        cur = con.execute(
-            "SELECT * FROM vpn_keys WHERE username=? ORDER BY active DESC, expires_at DESC",
-            (normalise_username(username),),
-        )
-        rows = cur.fetchall()
-    return [_row_to_dict(row) for row in rows]
+    def _operation() -> list[dict]:
+        with connect() as con:
+            cur = con.execute(
+                "SELECT * FROM vpn_keys WHERE username=? ORDER BY active DESC, expires_at DESC",
+                (normalise_username(username),),
+            )
+            rows = cur.fetchall()
+        return [_row_to_dict(row) for row in rows]
+
+    return _run_with_schema_retry(_operation)
 
 
 def create_vpn_key(
@@ -392,8 +433,11 @@ def update_key_expiry(uuid_value: str, expires_at: datetime) -> None:
 
 
 def deactivate_key(uuid_value: str) -> None:
-    with connect() as con:
-        con.execute("UPDATE vpn_keys SET active=0 WHERE uuid=?", (uuid_value,))
+    def _operation() -> None:
+        with connect() as con:
+            con.execute("UPDATE vpn_keys SET active=0 WHERE uuid=?", (uuid_value,))
+
+    _run_with_schema_retry(_operation)
     logger.info("Deactivated VPN key", extra={"uuid": uuid_value})
 
 
@@ -408,14 +452,17 @@ def create_payment(
 ) -> dict:
     now = _utcnow().isoformat()
     username = normalise_username(username)
-    with connect() as con:
-        con.execute(
-            """
-            INSERT INTO payments (payment_id, username, chat_id, plan, amount, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (payment_id, username, chat_id, plan, amount, status, now, now),
-        )
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT INTO payments (payment_id, username, chat_id, plan, amount, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (payment_id, username, chat_id, plan, amount, status, now, now),
+            )
+
+    _run_with_schema_retry(_operation)
     logger.info("Created payment", extra={"payment_id": payment_id, "username": username, "plan": plan})
     return {
         "payment_id": payment_id,
@@ -432,39 +479,48 @@ def create_payment(
 def update_payment_status(payment_id: str, *, status: str, paid_at: datetime | None = None, key_uuid: str | None = None) -> dict | None:
     now = _utcnow().isoformat()
     paid_iso = paid_at.replace(microsecond=0).isoformat() if paid_at else None
-    with connect() as con:
-        con.execute(
-            """
-            UPDATE payments
-            SET status=?, paid_at=COALESCE(?, paid_at), key_uuid=COALESCE(?, key_uuid), updated_at=?
-            WHERE payment_id=?
-            """,
-            (status, paid_iso, key_uuid, now, payment_id),
-        )
-        cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
-        row = cur.fetchone()
-    return _row_to_dict(row)
+    def _operation() -> dict | None:
+        with connect() as con:
+            con.execute(
+                """
+                UPDATE payments
+                SET status=?, paid_at=COALESCE(?, paid_at), key_uuid=COALESCE(?, key_uuid), updated_at=?
+                WHERE payment_id=?
+                """,
+                (status, paid_iso, key_uuid, now, payment_id),
+            )
+            cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    return _run_with_schema_retry(_operation)
 
 
 def get_payment(payment_id: str) -> dict | None:
-    with connect() as con:
-        cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
-        row = cur.fetchone()
-    return _row_to_dict(row)
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    return _run_with_schema_retry(_operation)
 
 
 def log_referral_bonus(referrer: str, referee: str, bonus_days: int) -> None:
     now = _utcnow().isoformat()
     referrer = normalise_username(referrer)
     referee = normalise_username(referee)
-    with connect() as con:
-        con.execute(
-            """
-            INSERT OR IGNORE INTO referrals (referrer, referee, bonus_days, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (referrer, referee, bonus_days, now),
-        )
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT OR IGNORE INTO referrals (referrer, referee, bonus_days, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (referrer, referee, bonus_days, now),
+            )
+
+    _run_with_schema_retry(_operation)
     logger.info(
         "Recorded referral bonus",
         extra={"referrer": referrer, "referee": referee, "bonus_days": bonus_days},
@@ -473,17 +529,20 @@ def log_referral_bonus(referrer: str, referee: str, bonus_days: int) -> None:
 
 def list_expiring_keys(*, within_days: int = 3) -> list[dict]:
     cutoff = (_utcnow() + timedelta(days=within_days)).isoformat()
-    with connect() as con:
-        cur = con.execute(
-            """
-            SELECT username, chat_id, uuid, expires_at
-            FROM vpn_keys
-            WHERE active=1 AND expires_at <= ?
-            ORDER BY expires_at ASC
-            """,
-            (cutoff,),
-        )
-        rows = cur.fetchall()
+    def _operation() -> list[sqlite3.Row]:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT username, chat_id, uuid, expires_at
+                FROM vpn_keys
+                WHERE active=1 AND expires_at <= ?
+                ORDER BY expires_at ASC
+                """,
+                (cutoff,),
+            )
+            return cur.fetchall()
+
+    rows = _run_with_schema_retry(_operation)
     now = _utcnow()
     result: list[dict] = []
     for row in rows:
@@ -510,28 +569,34 @@ def list_expiring_keys(*, within_days: int = 3) -> list[dict]:
 
 
 def referral_bonus_exists(referrer: str, referee: str) -> bool:
-    with connect() as con:
-        cur = con.execute(
-            "SELECT 1 FROM referrals WHERE referrer=? AND referee=?",
-            (normalise_username(referrer), normalise_username(referee)),
-        )
-        row = cur.fetchone()
-    return row is not None
+    def _operation() -> bool:
+        with connect() as con:
+            cur = con.execute(
+                "SELECT 1 FROM referrals WHERE referrer=? AND referee=?",
+                (normalise_username(referrer), normalise_username(referee)),
+            )
+            row = cur.fetchone()
+        return row is not None
+
+    return _run_with_schema_retry(_operation)
 
 
 def get_referral_stats(referrer: str) -> dict:
-    with connect() as con:
-        cur = con.execute(
-            """
-            SELECT COUNT(*) AS total_referrals, COALESCE(SUM(bonus_days), 0) AS total_days
-            FROM referrals
-            WHERE referrer=?
-            """,
-            (normalise_username(referrer),),
-        )
-        row = cur.fetchone()
-    data = _row_to_dict(row) or {"total_referrals": 0, "total_days": 0}
-    return data
+    def _operation() -> dict:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT COUNT(*) AS total_referrals, COALESCE(SUM(bonus_days), 0) AS total_days
+                FROM referrals
+                WHERE referrer=?
+                """,
+                (normalise_username(referrer),),
+            )
+            row = cur.fetchone()
+        data = _row_to_dict(row) or {"total_referrals": 0, "total_days": 0}
+        return data
+
+    return _run_with_schema_retry(_operation)
 
 
 def extend_active_key(username: str, *, days: int) -> dict | None:
