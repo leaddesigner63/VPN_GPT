@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS tg_users (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  username TEXT,
+  full_name TEXT,
+  message TEXT,
+  reply TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS vpn_keys (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
@@ -95,6 +105,8 @@ CREATE TABLE IF NOT EXISTS referrals (
 """
 
 INDEX_SQL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_users_username ON tg_users(username)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_uuid ON vpn_keys(uuid)",
     "CREATE INDEX IF NOT EXISTS idx_vpn_keys_username ON vpn_keys(username)",
     "CREATE INDEX IF NOT EXISTS idx_vpn_keys_expires ON vpn_keys(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_payments_username ON payments(username)",
@@ -114,6 +126,17 @@ def _table_columns(con: sqlite3.Connection, table: str) -> set[str]:
         return set()
     cur = con.execute(f"PRAGMA table_info({table})")
     return {row["name"] for row in cur.fetchall()}
+
+
+def _apply_indexes(con: sqlite3.Connection) -> None:
+    for statement in INDEX_SQL:
+        try:
+            target = statement.split("ON ", 1)[1].split("(", 1)[0].strip()
+        except IndexError:  # pragma: no cover - defensive
+            continue
+        if not _table_exists(con, target):
+            continue
+        con.execute(statement)
 
 
 @contextmanager
@@ -141,8 +164,7 @@ def init_db() -> None:
     logger.info("Ensuring SQLite schema exists", extra={"path": str(DB_PATH)})
     with connect() as con:
         con.executescript(INIT_SQL)
-        for statement in INDEX_SQL:
-            con.execute(statement)
+        _apply_indexes(con)
     logger.info("Database initialisation complete")
 
 
@@ -278,6 +300,24 @@ def get_key_by_uuid(uuid_value: str) -> dict | None:
         cur = con.execute("SELECT * FROM vpn_keys WHERE uuid=?", (uuid_value,))
         row = cur.fetchone()
     return _row_to_dict(row)
+
+
+def list_broadcast_targets() -> list[dict]:
+    with connect() as con:
+        cur = con.execute(
+            """
+            SELECT chat_id, username
+            FROM tg_users
+            WHERE chat_id IS NOT NULL AND chat_id <> 0
+            ORDER BY updated_at DESC
+            """
+        )
+        rows = cur.fetchall()
+    return [
+        {"chat_id": row["chat_id"], "username": row["username"]}
+        for row in rows
+        if row["chat_id"] is not None
+    ]
 
 
 def list_user_keys(username: str) -> list[dict]:
@@ -431,6 +471,44 @@ def log_referral_bonus(referrer: str, referee: str, bonus_days: int) -> None:
     )
 
 
+def list_expiring_keys(*, within_days: int = 3) -> list[dict]:
+    cutoff = (_utcnow() + timedelta(days=within_days)).isoformat()
+    with connect() as con:
+        cur = con.execute(
+            """
+            SELECT username, chat_id, uuid, expires_at
+            FROM vpn_keys
+            WHERE active=1 AND expires_at <= ?
+            ORDER BY expires_at ASC
+            """,
+            (cutoff,),
+        )
+        rows = cur.fetchall()
+    now = _utcnow()
+    result: list[dict] = []
+    for row in rows:
+        expires_raw = row["expires_at"]
+        try:
+            expires_dt = datetime.fromisoformat(expires_raw)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to parse expiry",
+                extra={"username": row["username"], "expires_at": expires_raw},
+            )
+            continue
+        remaining = max((expires_dt - now).days, 0)
+        result.append(
+            {
+                "username": row["username"],
+                "chat_id": row["chat_id"],
+                "uuid": row["uuid"],
+                "expires_at": expires_dt.replace(microsecond=0).isoformat(),
+                "expires_in_days": remaining,
+            }
+        )
+    return result
+
+
 def referral_bonus_exists(referrer: str, referee: str) -> bool:
     with connect() as con:
         cur = con.execute(
@@ -484,6 +562,34 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
             if not columns:
                 return
 
+            if "uuid" not in columns:
+                logger.warning(
+                    "Adding missing 'uuid' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute("ALTER TABLE vpn_keys ADD COLUMN uuid TEXT")
+                if "key_uuid" in columns:
+                    logger.info("Copying legacy key_uuid values into uuid column")
+                    con.execute(
+                        "UPDATE vpn_keys SET uuid=key_uuid WHERE uuid IS NULL AND key_uuid IS NOT NULL"
+                    )
+
+            if "chat_id" not in columns:
+                logger.warning(
+                    "Adding missing 'chat_id' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute("ALTER TABLE vpn_keys ADD COLUMN chat_id INTEGER")
+                if "user_id" in columns:
+                    logger.info("Copying legacy user_id values into chat_id column")
+                    con.execute(
+                        "UPDATE vpn_keys SET chat_id=user_id WHERE chat_id IS NULL AND user_id IS NOT NULL"
+                    )
+
+            if "country" not in columns:
+                logger.warning(
+                    "Adding missing 'country' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+                con.execute("ALTER TABLE vpn_keys ADD COLUMN country TEXT")
+
             if "trial" not in columns:
                 logger.warning(
                     "Adding missing 'trial' column to vpn_keys table", extra={"path": str(resolved)}
@@ -514,6 +620,28 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
                 logger.info(
                     "Successfully added 'label' column to vpn_keys table", extra={"path": str(resolved)}
                 )
+
+            _apply_indexes(con)
+
+            user_columns = _table_columns(con, "tg_users")
+            if user_columns:
+                if "referrer" not in user_columns:
+                    logger.warning(
+                        "Adding missing 'referrer' column to tg_users table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE tg_users ADD COLUMN referrer TEXT")
+
+                if "created_at" not in user_columns:
+                    logger.warning(
+                        "Adding missing 'created_at' column to tg_users table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE tg_users ADD COLUMN created_at TEXT")
+
+                if "updated_at" not in user_columns:
+                    logger.warning(
+                        "Adding missing 'updated_at' column to tg_users table", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE tg_users ADD COLUMN updated_at TEXT")
     except Exception as exc:  # pragma: no cover - defensive
         MIGRATION_ERROR = (resolved, exc)
         logger.exception("Failed to apply database migrations", extra={"path": str(resolved)})
@@ -532,6 +660,7 @@ __all__ = [
     "get_user_referrer",
     "user_has_trial",
     "get_active_key",
+    "list_broadcast_targets",
     "list_user_keys",
     "create_vpn_key",
     "update_key_expiry",
@@ -540,6 +669,7 @@ __all__ = [
     "get_payment",
     "update_payment_status",
     "log_referral_bonus",
+    "list_expiring_keys",
     "referral_bonus_exists",
     "get_referral_stats",
     "extend_active_key",

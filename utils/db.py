@@ -1,221 +1,206 @@
-import sqlite3
+from __future__ import annotations
+
 from datetime import datetime, timedelta
+from typing import Iterable, List, Tuple
 
-DB_PATH = "/root/VPN_GPT/dialogs.db"
+from api.utils import db as core_db
+
+DB_PATH = str(core_db.DB_PATH)
 
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            username TEXT,
-            full_name TEXT,
-            message TEXT,
-            reply TEXT,
-            created_at TEXT
+def init_db() -> None:
+    """Initialise the shared SQLite database and ensure legacy tables exist."""
+    core_db.init_db()
+    with core_db.connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                username TEXT,
+                full_name TEXT,
+                message TEXT,
+                reply TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
         )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS vpn_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            username TEXT,
-            full_name TEXT,
-            key_uuid TEXT,
-            link TEXT,
-            issued_at TEXT,
-            expires_at TEXT,
-            active INTEGER DEFAULT 0
-        )
-    """)
-
-    # удаляем дубликаты, оставляя последний по id
-    c.execute(
-        """
-        DELETE FROM vpn_keys
-        WHERE username IS NOT NULL
-          AND username <> ''
-          AND id NOT IN (
-            SELECT MAX(id) FROM vpn_keys
-            WHERE username IS NOT NULL AND username <> ''
-            GROUP BY username
-          )
-        """
-    )
-    c.execute(
-        """
-        DELETE FROM vpn_keys
-        WHERE user_id IS NOT NULL
-          AND id NOT IN (
-            SELECT MAX(id) FROM vpn_keys
-            WHERE user_id IS NOT NULL
-            GROUP BY user_id
-          )
-        """
-    )
-
-    c.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_username
-        ON vpn_keys(username)
-        WHERE username IS NOT NULL AND username <> ''
-        """
-    )
-    c.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_keys_user_id
-        ON vpn_keys(user_id)
-        WHERE user_id IS NOT NULL
-        """
-    )
-
-    conn.commit()
-    conn.close()
 
 
-def save_message(user_id, username, full_name, message, reply):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""
+def save_message(
+    user_id: int | None,
+    username: str | None,
+    full_name: str | None,
+    message: str,
+    reply: str,
+) -> None:
+    """Persist a message/reply exchange for conversational history."""
+    created_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    with core_db.connect() as conn:
+        conn.execute(
+            """
             INSERT INTO history (user_id, username, full_name, message, reply, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, username, full_name, message, reply, datetime.utcnow().isoformat()))
-        conn.commit()
+            """,
+            (user_id, username, full_name, message, reply, created_at),
+        )
 
 
-def get_last_messages(user_id, limit=5):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        SELECT message, reply FROM history
-        WHERE user_id = ?
-        ORDER BY id DESC
-        LIMIT ?
-    """, (user_id, limit))
-    rows = c.fetchall()
-    conn.close()
-    return rows[::-1]
-
-
-def save_vpn_key(user_id, username, full_name, link, expires_at):
-    import uuid
-    key_uuid = str(uuid.uuid4())
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute(
+def get_last_messages(user_id: int, limit: int = 5) -> List[Tuple[str, str]]:
+    """Return the most recent message/reply pairs for the given user."""
+    with core_db.connect() as conn:
+        cur = conn.execute(
             """
-            SELECT id, active FROM vpn_keys
-            WHERE (user_id = ? AND user_id IS NOT NULL)
-               OR (username = ? AND username IS NOT NULL)
-            ORDER BY active DESC, id DESC
+            SELECT message, reply FROM history
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        )
+        rows = cur.fetchall()
+    return [(row["message"], row["reply"]) for row in reversed(rows)]
+
+
+def _coerce_datetime(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value)
+
+
+def save_vpn_key(
+    user_id: int | None,
+    username: str,
+    full_name: str | None,
+    link: str,
+    expires_at: datetime | str,
+) -> str | None:
+    """Persist a newly issued VPN key if the user does not have an active one."""
+    from uuid import uuid4
+
+    normalised_username = core_db.normalise_username(username)
+    expires_dt = _coerce_datetime(expires_at).replace(microsecond=0)
+
+    with core_db.connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT uuid, active FROM vpn_keys
+            WHERE (username = ? AND username IS NOT NULL)
+               OR (chat_id = ? AND chat_id IS NOT NULL)
+            ORDER BY active DESC, expires_at DESC
             LIMIT 1
             """,
-            (user_id, username),
+            (normalised_username, user_id),
         )
-        existing = c.fetchone()
-        if existing and existing[1] == 1:
-            # активный ключ уже существует
+        existing = cur.fetchone()
+        if existing and existing["active"]:
             return None
-        c.execute(
-            """
-            INSERT INTO vpn_keys (user_id, username, full_name, key_uuid, link, issued_at, expires_at, active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-        """,
-            (
-                user_id,
-                username,
-                full_name,
-                key_uuid,
-                link,
-                datetime.utcnow().isoformat(),
-                expires_at.isoformat(),
-            ),
-        )
-        conn.commit()
-        return key_uuid
+
+    key_uuid = str(uuid4())
+    label = full_name or f"VPN_GPT_{normalised_username}"
+    payload = core_db.create_vpn_key(
+        username=normalised_username,
+        chat_id=user_id,
+        uuid_value=key_uuid,
+        link=link,
+        expires_at=expires_dt,
+        label=label,
+        country=None,
+        trial=False,
+    )
+    return payload["uuid"]
 
 
-def get_expiring_keys(days_before=3):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    threshold = (datetime.utcnow() + timedelta(days=days_before)).isoformat()
-    c.execute("""
-        SELECT user_id, full_name, expires_at FROM vpn_keys
-        WHERE active = 1 AND expires_at <= ?
-    """, (threshold,))
-    rows = c.fetchall()
-    conn.close()
-
-    parsed = []
-    for user_id, name, exp in rows:
+def get_expiring_keys(days_before: int = 3) -> List[Tuple[int | None, str, datetime]]:
+    """Return chat identifiers and expiry dates for keys ending soon."""
+    records = core_db.list_expiring_keys(within_days=days_before)
+    result: list[Tuple[int | None, str, datetime]] = []
+    for record in records:
         try:
-            parsed.append((user_id, name, datetime.fromisoformat(exp)))
-        except:
+            expires = datetime.fromisoformat(record["expires_at"])
+        except Exception:
             continue
-    return parsed
+        result.append((record.get("chat_id"), record["username"], expires))
+    return result
 
 
-def renew_vpn_key(user_id, extend_days=30):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        SELECT id, expires_at FROM vpn_keys
-        WHERE user_id = ? AND active = 1
-        ORDER BY id DESC LIMIT 1
-    """, (user_id,))
-    row = c.fetchone()
+def renew_vpn_key(user_id: int, extend_days: int = 30) -> datetime | None:
+    """Extend the expiry for the most recent active key linked to the chat."""
+    with core_db.connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT uuid, expires_at FROM vpn_keys
+            WHERE chat_id = ? AND active = 1
+            ORDER BY expires_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        row = cur.fetchone()
 
     if not row:
-        conn.close()
         return None
 
-    key_id, old_exp = row
-    old_exp_date = datetime.fromisoformat(old_exp)
-    new_exp_date = old_exp_date + timedelta(days=extend_days)
+    try:
+        current_expiry = datetime.fromisoformat(row["expires_at"])
+    except Exception:
+        current_expiry = datetime.utcnow()
 
-    c.execute("UPDATE vpn_keys SET expires_at = ? WHERE id = ?", (new_exp_date.isoformat(), key_id))
-    conn.commit()
-    conn.close()
-    return new_exp_date
+    if current_expiry < datetime.utcnow():
+        current_expiry = datetime.utcnow()
 
-
-def get_expired_keys():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.utcnow().isoformat()
-    c.execute("""
-        SELECT user_id, full_name, link
-        FROM vpn_keys
-        WHERE active = 1 AND expires_at < ?
-        ORDER BY expires_at ASC
-    """, (now,))
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    new_expiry = current_expiry + timedelta(days=extend_days)
+    core_db.update_key_expiry(row["uuid"], new_expiry)
+    return new_expiry
 
 
-def deactivate_vpn_key(user_id):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("UPDATE vpn_keys SET active = 0 WHERE user_id = ?", (user_id,))
-        conn.commit()
+def get_expired_keys() -> List[Tuple[int | None, str, str]]:
+    """Return all active keys that are already past their expiry date."""
+    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    with core_db.connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT chat_id, username, link
+            FROM vpn_keys
+            WHERE active = 1 AND expires_at < ?
+            ORDER BY expires_at ASC
+            """,
+            (now_iso,),
+        )
+        rows = cur.fetchall()
+    return [(row["chat_id"], row["username"], row["link"]) for row in rows]
 
 
-def get_all_active_users():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        SELECT user_id, full_name, expires_at
-        FROM vpn_keys
-        WHERE active = 1
-        ORDER BY expires_at DESC
-    """)
-    rows = c.fetchall()
-    conn.close()
-    return rows
+def deactivate_vpn_key(user_id: int) -> None:
+    """Mark the VPN key linked to the chat identifier as inactive."""
+    with core_db.connect() as conn:
+        conn.execute("UPDATE vpn_keys SET active = 0 WHERE chat_id = ?", (user_id,))
 
+
+def get_all_active_users() -> List[Tuple[int | None, str, str]]:
+    """Return all active subscriptions ordered by expiry date."""
+    with core_db.connect() as conn:
+        cur = conn.execute(
+            """
+            SELECT chat_id, username, expires_at
+            FROM vpn_keys
+            WHERE active = 1
+            ORDER BY expires_at DESC
+            """
+        )
+        rows = cur.fetchall()
+    return [(row["chat_id"], row["username"], row["expires_at"]) for row in rows]
+
+
+__all__: Iterable[str] = (
+    "DB_PATH",
+    "init_db",
+    "save_message",
+    "get_last_messages",
+    "save_vpn_key",
+    "get_expiring_keys",
+    "renew_vpn_key",
+    "get_expired_keys",
+    "deactivate_vpn_key",
+    "get_all_active_users",
+)
