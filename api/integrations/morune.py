@@ -165,6 +165,50 @@ def _stringify(value: Any, *, extra_keys: Sequence[str] | None = None) -> str | 
     return str(value).strip() or None
 
 
+def _extract_first_url(payload: Any) -> str | None:
+    """Return the first ``http`` URL-like string found inside ``payload``.
+
+    Morune периодически меняет схему ответа и переименовывает поля с ссылкой
+    на оплату. Если ни один из известных ключей не подошёл, просканируем
+    вложенные структуры и достанем первую строку, похожую на URL.
+    """
+
+    if payload is None:
+        return None
+
+    stack: list[Any] = [payload]
+    seen: set[int] = set()
+
+    while stack:
+        current = stack.pop()
+        ident = id(current)
+        if ident in seen:
+            continue
+        seen.add(ident)
+
+        if isinstance(current, Mapping):
+            values = list(current.values())
+            for value in values:
+                if isinstance(value, str):
+                    candidate = value.strip()
+                    if candidate.startswith("http://") or candidate.startswith("https://"):
+                        return candidate
+            for value in reversed(values):
+                if isinstance(value, Mapping) or _is_sequence(value):
+                    stack.append(value)
+        elif _is_sequence(current):
+            for item in current:
+                if isinstance(item, str):
+                    candidate = item.strip()
+                    if candidate.startswith("http://") or candidate.startswith("https://"):
+                        return candidate
+            for item in reversed(list(current)):
+                if isinstance(item, Mapping) or _is_sequence(item):
+                    stack.append(item)
+
+    return None
+
+
 class MoruneClient:
     """Minimal HTTP client for Morune payment API."""
 
@@ -308,6 +352,8 @@ class MoruneClient:
                 ],
             )
         )
+        if not payment_url:
+            payment_url = _extract_first_url(invoice) or _extract_first_url(data)
         status = (
             invoice.get("status")
             or data.get("status")
