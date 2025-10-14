@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from api.utils.logging import configure_logging, get_logger
+from api.config import BOT_PAYMENT_URL
 
 # === Initialization ===
 load_dotenv()
@@ -16,6 +20,30 @@ configure_logging()
 logger = get_logger("api")
 
 app = FastAPI(title="VPN_GPT Action Hub", version="1.0.0")
+
+
+def _extract_origin(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return None
+
+
+cors_env = os.getenv("CORS_ALLOW_ORIGINS")
+if cors_env:
+    origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
+else:
+    default_origin = _extract_origin(BOT_PAYMENT_URL)
+    origins = [default_origin] if default_origin else []
+
+if origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+        allow_credentials=False,
+    )
 
 # === Routers ===
 from api.endpoints import admin, notify, payments, referrals, users, vpn  # noqa: E402

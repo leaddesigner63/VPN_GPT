@@ -25,11 +25,16 @@
   .hero{padding:80px 0 40px;text-align:center}
   .hero h1{font-size:clamp(28px,4vw,44px);font-weight:700;line-height:1.2;margin-bottom:16px}
   .hero p{color:var(--muted);font-size:18px;margin-bottom:32px}
-  .payment-form{max-width:420px;margin:0 auto;background:#101730;padding:24px;border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);text-align:left}
+  .payment-form{max-width:440px;margin:0 auto;background:#101730;padding:28px;border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);text-align:left;position:relative}
   .payment-form label{display:block;margin-bottom:8px;color:var(--muted);font-size:14px}
-  .payment-form input,.payment-form select{width:100%;padding:12px;background:#0b1020;color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);margin-bottom:16px;font-size:14px}
-  .btn{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#02142a;padding:14px 28px;border-radius:var(--radius);font-weight:700;transition:.2s;text-align:center}
-  .btn:hover{opacity:.9}
+  .payment-form input,.payment-form select{width:100%;padding:12px;background:#0b1020;color:var(--text);border:1px solid rgba(195,255,255,.12);border-radius:var(--radius);margin-bottom:18px;font-size:15px;transition:border-color .2s ease}
+  .payment-form input:focus,.payment-form select:focus{outline:none;border-color:var(--accent)}
+  .btn{display:inline-block;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#02142a;padding:14px 28px;border-radius:var(--radius);font-weight:700;transition:.2s;text-align:center;border:none;cursor:pointer}
+  .btn[disabled]{opacity:.6;cursor:wait}
+  .btn:hover:not([disabled]){opacity:.9}
+  .status{margin-top:18px;font-size:14px;color:var(--muted);min-height:20px}
+  .status.success{color:#7fffd4}
+  .status.error{color:#ff7b7b}
   footer{padding:40px 0;color:var(--muted);font-size:14px;text-align:center;border-top:1px solid rgba(255,255,255,.05);margin-top:60px}
   .footer-links a{margin:0 8px;font-size:13px;color:var(--muted)}
 </style>
@@ -49,18 +54,24 @@
   <section class="hero">
     <div class="container">
       <h1>Оплата подписки</h1>
-      <p>Выберите удобный период подписки и нажмите «Оплатить».</p>
+      <p>Мы автоматически создадим счёт и перенаправим на безопасную страницу оплаты.</p>
       <div class="payment-form">
-        <form action="#" method="post">
-          <label for="config">Код конфигурации из Telegram‑бота (ваша ссылка)</label>
-          <input type="text" id="config" name="config" placeholder="vless://">
+        <form id="payment-form" autocomplete="on">
+          <label for="username">Ваш @username в Telegram</label>
+          <input type="text" id="username" name="username" placeholder="@username" autocomplete="username" required>
+          <input type="hidden" id="chat_id" name="chat_id">
+          <input type="hidden" id="referrer" name="referrer">
+          <input type="hidden" id="amount" name="amount">
+          <input type="hidden" id="currency" name="currency">
           <label for="period">Выберите период</label>
           <select id="period" name="period">
-            <option value="1m">1 месяц — 180 ₽</option>
-            <option value="3m">3 месяца — 460 ₽</option>
-            <option value="12m">1 год — 1450 ₽</option>
+            <option value="1m">1&nbsp;месяц&nbsp;—&nbsp;180&nbsp;₽</option>
+            <option value="3m">3&nbsp;месяца&nbsp;—&nbsp;460&nbsp;₽</option>
+            <option value="12m">1&nbsp;год&nbsp;—&nbsp;1450&nbsp;₽</option>
           </select>
-          <a class="btn" href="" target="_blank" style="display:block;margin-top:8px">Оплатить</a>
+          <button type="submit" class="btn" id="submit-btn">Оплатить</button>
+          <a class="btn" id="open-link" href="#" target="_blank" rel="noopener" style="display:none;margin-top:12px;text-align:center">Открыть оплату</a>
+          <div id="status" class="status" aria-live="polite"></div>
         </form>
       </div>
     </div>
@@ -74,7 +85,124 @@
         <a href="offer.html" target="_blank">Публичная оферта</a>
       </div>
     </div>
-    <script>document.getElementById('py').textContent=new Date().getFullYear()</script>
   </footer>
+  <script>
+    document.getElementById('py').textContent=new Date().getFullYear();
+
+    const form=document.getElementById('payment-form');
+    const usernameInput=document.getElementById('username');
+    const periodSelect=document.getElementById('period');
+    const chatIdInput=document.getElementById('chat_id');
+    const referrerInput=document.getElementById('referrer');
+    const amountInput=document.getElementById('amount');
+    const currencyInput=document.getElementById('currency');
+    const submitBtn=document.getElementById('submit-btn');
+    const openLink=document.getElementById('open-link');
+    const statusBox=document.getElementById('status');
+
+    const params=new URLSearchParams(window.location.search);
+    const presetUsername=params.get('u')||params.get('username');
+    const presetPlan=params.get('plan');
+    const presetChat=params.get('c')||params.get('chat_id');
+    const presetRef=params.get('r')||params.get('referrer');
+    const presetAmount=params.get('amount');
+    const presetCurrency=params.get('currency');
+    const autoStart=['1','true','yes'].includes((params.get('auto')||params.get('autostart')||'').toLowerCase());
+
+    if(presetUsername) usernameInput.value=presetUsername.startsWith('@')?presetUsername:`@${presetUsername}`;
+    if(presetPlan) periodSelect.value=presetPlan;
+    if(presetChat) chatIdInput.value=presetChat;
+    if(presetRef) referrerInput.value=presetRef;
+    if(presetAmount) amountInput.value=presetAmount;
+    if(presetCurrency) currencyInput.value=presetCurrency;
+
+    const API_BASE=(window.VPN_GPT_API_BASE||`${window.location.origin.replace(/\/$/,'')}/api`).replace(/\/$/,'');
+    const FORM_TOKEN=window.VPN_GPT_FORM_TOKEN||'__PUBLIC_FORM_TOKEN__';
+
+    const buildMetadata=()=>{
+      const meta={};
+      const utm=['utm_source','utm_medium','utm_campaign','utm_term','utm_content'];
+      utm.forEach(key=>{const value=params.get(key);if(value)meta[key]=value;});
+      if(document.referrer)meta.referrer=document.referrer;
+      return meta;
+    };
+
+    const setStatus=(text,type)=>{
+      statusBox.textContent=text||'';
+      statusBox.classList.remove('error','success');
+      if(type)statusBox.classList.add(type);
+    };
+
+    const toggleLoading=isLoading=>{
+      submitBtn.disabled=isLoading;
+      submitBtn.textContent=isLoading?'Создаём счёт…':'Оплатить';
+    };
+
+    async function requestPayment(autoRedirect){
+      const rawUsername=usernameInput.value.trim();
+      if(!rawUsername){
+        setStatus('Укажите ваш @username, чтобы мы привязали оплату к аккаунту.', 'error');
+        return;
+      }
+      const normalizedUsername=rawUsername.startsWith('@')?rawUsername.slice(1):rawUsername;
+      const payload={
+        username:normalizedUsername,
+        plan:periodSelect.value,
+        chat_id:chatIdInput.value?Number(chatIdInput.value):undefined,
+        referrer:referrerInput.value||undefined,
+        amount:amountInput.value?Number(amountInput.value):undefined,
+        currency:currencyInput.value||undefined,
+        metadata:buildMetadata(),
+      };
+
+      toggleLoading(true);
+      openLink.style.display='none';
+      setStatus('Создаём счёт…',null);
+
+      try{
+        const headers={'Content-Type':'application/json'};
+        if(FORM_TOKEN && FORM_TOKEN!=='__PUBLIC_FORM_TOKEN__'){
+          headers['X-Form-Token']=FORM_TOKEN;
+        }
+        const response=await fetch(`${API_BASE}/payments/public/create`,{
+          method:'POST',
+          headers,
+          body:JSON.stringify(payload),
+        });
+        if(!response.ok){
+          const errorBody=await response.json().catch(()=>({}));
+          const detail=errorBody.detail||errorBody.error||response.statusText;
+          throw new Error(detail||`Ошибка ${response.status}`);
+        }
+        const data=await response.json();
+        const paymentUrl=data.payment_url;
+        const paymentId=data.payment_id;
+        if(paymentUrl){
+          setStatus('Счёт готов! Перенаправляем…','success');
+          openLink.href=paymentUrl;
+          openLink.style.display='inline-block';
+          if(autoRedirect){
+            window.location.href=paymentUrl;
+          }
+        }else{
+          setStatus('Счёт создан, но ссылка оплаты не получена. Свяжитесь с поддержкой и назовите номер '+paymentId,'error');
+        }
+      }catch(error){
+        console.error(error);
+        setStatus(`Не удалось создать оплату: ${error.message||error}`,'error');
+      }finally{
+        toggleLoading(false);
+      }
+    }
+
+    form.addEventListener('submit',event=>{
+      event.preventDefault();
+      requestPayment(false);
+    });
+
+    if(autoStart){
+      requestPayment(true);
+    }
+  </script>
 </body>
 </html>

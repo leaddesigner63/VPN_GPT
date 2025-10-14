@@ -2,17 +2,33 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from api.config import (
     DEFAULT_COUNTRY,
+    MORUNE_API_KEY,
+    MORUNE_BASE_URL,
+    MORUNE_DEFAULT_CURRENCY,
+    MORUNE_FAIL_URL,
+    MORUNE_PROJECT_ID,
+    MORUNE_SUCCESS_URL,
+    MORUNE_WEBHOOK_SECRET,
+    PAYMENTS_DEFAULT_SOURCE,
+    PAYMENTS_PUBLIC_TOKEN,
     REFERRAL_BONUS_DAYS,
     plan_amount,
     plan_duration,
 )
 from api.endpoints.security import require_service_token
+from api.integrations.morune import (
+    MoruneAPIError,
+    MoruneClient,
+    MoruneConfigurationError,
+    MoruneSignatureError,
+)
 from api.utils import db
 from api.utils.logging import get_logger
 from api.utils.vless import build_vless_link
@@ -20,12 +36,38 @@ from api.utils.vless import build_vless_link
 router = APIRouter(prefix="/payments", tags=["payments"])
 logger = get_logger("endpoints.payments")
 
+_MORUNE_CLIENT: MoruneClient | None = None
+
+
+def _get_morune_client() -> MoruneClient | None:
+    global _MORUNE_CLIENT
+    if _MORUNE_CLIENT is not None:
+        return _MORUNE_CLIENT
+    if not (MORUNE_API_KEY and MORUNE_PROJECT_ID):
+        return None
+    try:
+        _MORUNE_CLIENT = MoruneClient(
+            base_url=MORUNE_BASE_URL,
+            api_key=MORUNE_API_KEY,
+            project_id=MORUNE_PROJECT_ID,
+            webhook_secret=MORUNE_WEBHOOK_SECRET,
+        )
+        logger.info("Morune client initialised", extra={"base_url": MORUNE_BASE_URL})
+    except MoruneConfigurationError:
+        logger.warning("Morune configuration incomplete; client disabled")
+        _MORUNE_CLIENT = None
+    return _MORUNE_CLIENT
+
 
 class CreatePaymentRequest(BaseModel):
     username: str = Field(...)
     chat_id: int | None = Field(None)
     plan: str = Field(..., description="Код тарифа")
     amount: int | None = Field(None, description="Сумма оплаты, если рассчитывается внешне")
+    currency: str | None = Field(None, description="Код валюты ISO 4217")
+    referrer: str | None = Field(None, description="Реферальный идентификатор")
+    metadata: dict[str, Any] | None = Field(None, description="Дополнительные метаданные платежа")
+    source: str | None = Field(None, description="Источник (telegram/api/site)")
 
 
 class CreatePaymentResponse(BaseModel):
@@ -34,7 +76,21 @@ class CreatePaymentResponse(BaseModel):
     username: str
     plan: str
     amount: int
+    currency: str
     status: str
+    provider: str | None = None
+    provider_payment_id: str | None = None
+    payment_url: str | None = None
+
+
+class PublicCreatePaymentRequest(BaseModel):
+    username: str
+    plan: str
+    chat_id: int | None = None
+    referrer: str | None = None
+    amount: int | None = None
+    currency: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class ConfirmPaymentRequest(BaseModel):
@@ -44,6 +100,10 @@ class ConfirmPaymentRequest(BaseModel):
     plan: str
     amount: int | None = None
     paid_at: str | None = None
+    currency: str | None = None
+    provider_status: str | None = None
+    payment_url: str | None = None
+    raw_provider_payload: dict[str, Any] | None = None
 
 
 class ConfirmPaymentResponse(BaseModel):
@@ -52,9 +112,17 @@ class ConfirmPaymentResponse(BaseModel):
     username: str
     plan: str
     amount: int
+    currency: str
     status: str
     expires_at: str
     key_uuid: str
+    payment_url: str | None = None
+
+
+class WebhookAck(BaseModel):
+    ok: bool
+    payment_id: str | None = None
+    detail: str | None = None
 
 
 def _resolve_amount(plan: str, amount_override: int | None) -> int:
@@ -123,31 +191,222 @@ def _award_referral_bonus(username: str) -> None:
     logger.info("Awarded referral bonus", extra={"referrer": referrer, "referee": username})
 
 
-@router.post("/create", response_model=CreatePaymentResponse)
-def create_payment(request: CreatePaymentRequest, _: None = Depends(require_service_token)):
+def _prepare_metadata(
+    *,
+    payment_id: str,
+    username: str,
+    plan: str,
+    source: str,
+    chat_id: int | None,
+    referrer: str | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {str(key): value for key, value in (metadata or {}).items()}
+    payload.update(
+        {
+            "order_id": payment_id,
+            "username": username,
+            "plan": plan,
+            "source": source,
+        }
+    )
+    if chat_id is not None:
+        payload["chat_id"] = chat_id
+    if referrer:
+        payload["referrer"] = referrer
+    return payload
+
+
+def _create_payment_internal(
+    *,
+    username: str,
+    chat_id: int | None,
+    plan: str,
+    amount_override: int | None,
+    currency: str | None,
+    referrer: str | None,
+    metadata: dict[str, Any] | None,
+    source: str,
+) -> CreatePaymentResponse:
     try:
-        username = db.normalise_username(request.username)
+        normalized_username = db.normalise_username(username)
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username")
 
     try:
-        amount = _resolve_amount(request.plan, request.amount)
+        amount = _resolve_amount(plan, amount_override)
     except KeyError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_plan")
+
+    resolved_currency = (currency or MORUNE_DEFAULT_CURRENCY or "RUB").upper()
     payment_id = uuid.uuid4().hex
+    metadata_payload = _prepare_metadata(
+        payment_id=payment_id,
+        username=normalized_username,
+        plan=plan,
+        source=source,
+        chat_id=chat_id,
+        referrer=referrer,
+        metadata=metadata,
+    )
+
+    provider = None
+    provider_payment_id = None
+    payment_url = None
+    provider_status = None
+    raw_payload: dict[str, Any] | None = None
+
+    client = _get_morune_client()
+    if client:
+        try:
+            invoice = client.create_invoice(
+                payment_id=payment_id,
+                amount=amount,
+                currency=resolved_currency,
+                description=f"VPN_GPT {plan} для {normalized_username}",
+                metadata=metadata_payload,
+                success_url=MORUNE_SUCCESS_URL,
+                fail_url=MORUNE_FAIL_URL,
+            )
+        except MoruneAPIError as exc:
+            logger.exception("Failed to create Morune invoice", extra={"payment_id": payment_id})
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="morune_create_failed",
+            ) from exc
+
+        provider = "morune"
+        provider_payment_id = invoice.provider_payment_id
+        payment_url = invoice.payment_url
+        provider_status = invoice.status
+        raw_payload = invoice.raw
+        if invoice.amount is not None:
+            amount = invoice.amount
+        if invoice.currency:
+            resolved_currency = invoice.currency.upper()
+
     record = db.create_payment(
         payment_id=payment_id,
-        username=username,
-        chat_id=request.chat_id,
-        plan=request.plan,
+        username=normalized_username,
+        chat_id=chat_id,
+        plan=plan,
         amount=amount,
+        currency=resolved_currency,
+        provider=provider,
+        provider_payment_id=provider_payment_id,
+        payment_url=payment_url,
+        external_status=provider_status,
+        raw_provider_payload=raw_payload,
+        referrer=referrer,
+        source=source,
+        metadata=metadata_payload,
     )
+
+    logger.info(
+        "Created payment",
+        extra={
+            "payment_id": payment_id,
+            "username": normalized_username,
+            "plan": plan,
+            "amount": amount,
+            "currency": resolved_currency,
+            "provider": provider,
+        },
+    )
+
     return CreatePaymentResponse(
         payment_id=record["payment_id"],
         username=record["username"],
         plan=record["plan"],
         amount=record["amount"],
+        currency=record.get("currency", resolved_currency),
         status=record["status"],
+        provider=record.get("provider"),
+        provider_payment_id=record.get("provider_payment_id"),
+        payment_url=record.get("payment_url"),
+    )
+
+
+def _finalise_payment(
+    payment: dict[str, Any],
+    *,
+    username: str,
+    chat_id: int | None,
+    plan: str,
+    amount: int,
+    currency: str,
+    duration_days: int,
+    paid_at: dt.datetime | None,
+    provider_status: str | None,
+    raw_provider_payload: dict[str, Any] | None,
+    payment_url: str | None,
+) -> ConfirmPaymentResponse:
+    subscription = _ensure_subscription(username, chat_id, duration_days)
+    updated = db.update_payment_status(
+        payment["payment_id"],
+        status="paid",
+        paid_at=paid_at or dt.datetime.utcnow().replace(microsecond=0),
+        key_uuid=subscription["uuid"],
+        provider_status=provider_status,
+        payment_url=payment_url,
+        raw_provider_payload=raw_provider_payload,
+    )
+
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="payment_update_failed")
+
+    _award_referral_bonus(username)
+    resolved_currency = (updated.get("currency") or currency or MORUNE_DEFAULT_CURRENCY).upper()
+
+    return ConfirmPaymentResponse(
+        payment_id=updated["payment_id"],
+        username=updated["username"],
+        plan=updated["plan"],
+        amount=amount,
+        currency=resolved_currency,
+        status=updated["status"],
+        expires_at=subscription["expires_at"],
+        key_uuid=subscription["uuid"],
+        payment_url=updated.get("payment_url"),
+    )
+
+
+@router.post("/create", response_model=CreatePaymentResponse)
+def create_payment(request: CreatePaymentRequest, _: None = Depends(require_service_token)):
+    source = request.source or "api"
+    return _create_payment_internal(
+        username=request.username,
+        chat_id=request.chat_id,
+        plan=request.plan,
+        amount_override=request.amount,
+        currency=request.currency,
+        referrer=request.referrer,
+        metadata=request.metadata,
+        source=source,
+    )
+
+
+@router.post("/public/create", response_model=CreatePaymentResponse)
+def public_create_payment(
+    request: PublicCreatePaymentRequest,
+    x_form_token: str | None = Header(None, alias="X-Form-Token"),
+):
+    if PAYMENTS_PUBLIC_TOKEN:
+        if x_form_token != PAYMENTS_PUBLIC_TOKEN:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
+    else:
+        logger.debug("PAYMENTS_PUBLIC_TOKEN is not configured; accepting public payment creation request")
+
+    source = PAYMENTS_DEFAULT_SOURCE or "site"
+    return _create_payment_internal(
+        username=request.username,
+        chat_id=request.chat_id,
+        plan=request.plan,
+        amount_override=request.amount,
+        currency=request.currency,
+        referrer=request.referrer,
+        metadata=request.metadata,
+        source=source,
     )
 
 
@@ -172,9 +431,11 @@ def confirm_payment(request: ConfirmPaymentRequest, _: None = Depends(require_se
             username=payment["username"],
             plan=payment["plan"],
             amount=payment["amount"],
+            currency=payment.get("currency", MORUNE_DEFAULT_CURRENCY),
             status=payment["status"],
             expires_at=key["expires_at"],
             key_uuid=key["uuid"],
+            payment_url=payment.get("payment_url"),
         )
 
     if payment["plan"] != request.plan:
@@ -186,33 +447,90 @@ def confirm_payment(request: ConfirmPaymentRequest, _: None = Depends(require_se
     except KeyError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_plan")
 
-    subscription = _ensure_subscription(username, request.chat_id, duration_days)
     paid_at = (
         dt.datetime.fromisoformat(request.paid_at)
         if request.paid_at
         else dt.datetime.utcnow().replace(microsecond=0)
     )
-    updated = db.update_payment_status(
-        request.payment_id,
-        status="paid",
-        paid_at=paid_at,
-        key_uuid=subscription["uuid"],
-    )
+    currency = (request.currency or payment.get("currency") or MORUNE_DEFAULT_CURRENCY).upper()
 
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="payment_update_failed")
-
-    _award_referral_bonus(username)
-
-    return ConfirmPaymentResponse(
-        payment_id=updated["payment_id"],
-        username=updated["username"],
-        plan=updated["plan"],
+    return _finalise_payment(
+        payment,
+        username=username,
+        chat_id=request.chat_id if request.chat_id is not None else payment.get("chat_id"),
+        plan=request.plan,
         amount=amount,
-        status=updated["status"],
-        expires_at=subscription["expires_at"],
-        key_uuid=subscription["uuid"],
+        currency=currency,
+        duration_days=duration_days,
+        paid_at=paid_at,
+        provider_status=request.provider_status,
+        raw_provider_payload=request.raw_provider_payload,
+        payment_url=request.payment_url or payment.get("payment_url"),
     )
 
 
-__all__ = ["create_payment", "confirm_payment"]
+@router.post("/morune/webhook", response_model=ConfirmPaymentResponse | WebhookAck)
+async def morune_webhook(request: Request):
+    client = _get_morune_client()
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="morune_not_configured")
+
+    body = await request.body()
+    signature = (
+        request.headers.get("X-Signature")
+        or request.headers.get("X-Morune-Signature")
+        or request.headers.get("X-Webhook-Signature")
+    )
+
+    try:
+        event = client.parse_webhook(body=body, signature=signature)
+    except MoruneSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_signature")
+    except MoruneAPIError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_payload")
+
+    payment = db.get_payment(event.payment_id)
+    if payment is None:
+        logger.warning("Received webhook for unknown payment", extra={"payment_id": event.payment_id})
+        return WebhookAck(ok=False, payment_id=event.payment_id, detail="payment_not_found")
+
+    status_lower = event.status.lower()
+    if status_lower not in {"paid", "success", "succeeded", "completed", "done"}:
+        db.update_payment_status(
+            payment["payment_id"],
+            status=status_lower,
+            provider_status=status_lower,
+            raw_provider_payload=event.raw,
+        )
+        return WebhookAck(ok=True, payment_id=payment["payment_id"], detail="status_recorded")
+
+    try:
+        duration_days = plan_duration(payment["plan"])
+    except KeyError:
+        logger.error("Webhook referenced unknown plan", extra={"plan": payment["plan"]})
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_plan")
+
+    amount = event.amount or payment.get("amount", 0)
+    currency = (event.currency or payment.get("currency") or MORUNE_DEFAULT_CURRENCY).upper()
+
+    return _finalise_payment(
+        payment,
+        username=payment["username"],
+        chat_id=payment.get("chat_id"),
+        plan=payment["plan"],
+        amount=amount,
+        currency=currency,
+        duration_days=duration_days,
+        paid_at=event.paid_at,
+        provider_status=status_lower,
+        raw_provider_payload=event.raw,
+        payment_url=payment.get("payment_url"),
+    )
+
+
+__all__ = [
+    "create_payment",
+    "public_create_payment",
+    "confirm_payment",
+    "morune_webhook",
+]
