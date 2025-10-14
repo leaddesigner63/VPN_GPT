@@ -27,14 +27,26 @@ def require_env(name: str) -> str:
 
     value = os.getenv(name)
     if not value:
-        logger.error("Required environment variable is missing", extra={"name": name})
+        logger.error(
+            "Required environment variable is missing",
+            extra={"env_name": name},
+        )
         raise RuntimeError(
             "Переменная окружения {name} не задана. "
             "Создайте файл {env} или установите переменную в окружении."
             .format(name=name, env=_ENV_PATH)
         )
-    logger.debug("Loaded environment variable", extra={"name": name})
+    logger.debug("Loaded environment variable", extra={"env_name": name})
     return value.strip()
+
+
+def _strip_inline_comment(raw: str) -> str:
+    """Remove inline shell-style comments from a value string."""
+
+    comment_pos = raw.find("#")
+    if comment_pos == -1:
+        return raw.strip()
+    return raw[:comment_pos].strip()
 
 
 def _parse_int(name: str, default: int) -> int:
@@ -42,9 +54,15 @@ def _parse_int(name: str, default: int) -> int:
     if raw is None:
         return default
     try:
-        value = int(raw)
+        cleaned = _strip_inline_comment(raw)
+        if cleaned == "":
+            return default
+        value = int(cleaned)
     except ValueError as exc:  # pragma: no cover - defensive
-        logger.error("Failed to parse int from env", extra={"name": name, "value": raw})
+        logger.error(
+            "Failed to parse int from env",
+            extra={"env_name": name, "env_value": raw},
+        )
         raise RuntimeError(f"Переменная окружения {name} должна быть целым числом") from exc
     return value
 

@@ -37,7 +37,32 @@ SYSTEM_PROMPT = os.getenv(
     "GPT_SYSTEM_PROMPT",
     "Ты — VPN_GPT, эксперт по VPN. Отвечай дружелюбно, кратко и по делу.",
 )
-MAX_HISTORY_MESSAGES = int(os.getenv("GPT_HISTORY_MESSAGES", "6"))
+# shell-style inline комментарии в переменных окружения иногда приводят к тому,
+# что стандартный ``int()`` не может преобразовать значение. Чтобы не падать при
+# загрузке конфигурации, очищаем такие комментарии.
+
+
+def _strip_inline_comment(raw: str) -> str:
+    comment_pos = raw.find("#")
+    if comment_pos == -1:
+        return raw.strip()
+    return raw[:comment_pos].strip()
+
+
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    cleaned = _strip_inline_comment(raw)
+    if cleaned == "":
+        return default
+    try:
+        return int(cleaned)
+    except ValueError as exc:  # pragma: no cover - defensive guard
+        raise RuntimeError(f"Переменная окружения {name} должна быть целым числом") from exc
+
+
+MAX_HISTORY_MESSAGES = _get_int_env("GPT_HISTORY_MESSAGES", 6)
 # FastAPI backend обслуживает бота на порту 8080 согласно документации.
 # Ранее значение по умолчанию указывало на 8000, из-за чего при отсутствии
 # переменной окружения бот безуспешно подключался к несуществующему сервису и
@@ -46,9 +71,9 @@ MAX_HISTORY_MESSAGES = int(os.getenv("GPT_HISTORY_MESSAGES", "6"))
 VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8080")
 SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
 BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
-TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "0"))
+TRIAL_DAYS = _get_int_env("TRIAL_DAYS", 0)
 PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
-REFERRAL_BONUS_DAYS = int(os.getenv("REFERRAL_BONUS_DAYS", "30"))
+REFERRAL_BONUS_DAYS = _get_int_env("REFERRAL_BONUS_DAYS", 30)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
