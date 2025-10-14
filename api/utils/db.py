@@ -176,9 +176,25 @@ def _apply_indexes(con: sqlite3.Connection) -> None:
     for statement in INDEX_SQL:
         try:
             target = statement.split("ON ", 1)[1].split("(", 1)[0].strip()
+            columns_part = statement.split("(", 1)[1].rsplit(")", 1)[0]
+            required_columns = {
+                column.strip().strip("`\"")
+                for column in columns_part.split(",")
+                if column.strip()
+            }
         except IndexError:  # pragma: no cover - defensive
             continue
         if not _table_exists(con, target):
+            continue
+        if required_columns and not required_columns.issubset(_table_columns(con, target)):
+            logger.debug(
+                "Skipping index creation due to missing columns",
+                extra={
+                    "table": target,
+                    "required_columns": sorted(required_columns),
+                    "statement": statement,
+                },
+            )
             continue
         con.execute(statement)
 
