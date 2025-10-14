@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -106,6 +107,14 @@ def test_issue_trial_key(api_app, configured_env):
     keys = _fetch_keys(configured_env.database, "alice")
     assert len(keys) == 1
     assert keys[0]["trial"] == 1
+
+    config_path = Path(os.environ["XRAY_CONFIG"])
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    clients = config["inbounds"][0]["settings"]["clients"]
+    assert any(
+        client.get("id") == body["uuid"] and client.get("email") == "VPN_GPT_alice"
+        for client in clients
+    )
 
 
 def test_issue_trial_second_time_returns_existing(api_app):
