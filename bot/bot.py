@@ -25,6 +25,36 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
+class _QrMessageTracker:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._messages: dict[int, int] = {}
+
+    async def remember(self, chat_id: int, message_id: int) -> None:
+        async with self._lock:
+            self._messages[chat_id] = message_id
+
+    async def pop(self, chat_id: int) -> int | None:
+        async with self._lock:
+            return self._messages.pop(chat_id, None)
+
+
+_qr_messages = _QrMessageTracker()
+
+
+async def _delete_previous_qr(chat_id: int) -> None:
+    message_id = await _qr_messages.pop(chat_id)
+    if message_id is None:
+        return
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        logger.debug(
+            "Failed to delete previous QR message",
+            extra={"chat_id": chat_id, "message_id": message_id},
+        )
+
+
 def _load_api_urls() -> list[str]:
     raw_urls = os.getenv("VPN_API_URLS")
     if raw_urls:
@@ -199,6 +229,7 @@ async def request_key_info(username: str, chat_id: int | None = None) -> dict:
 
 @dp.message(Command("start"))
 async def start(msg: Message):
+    await _delete_previous_qr(msg.chat.id)
     await msg.answer(
         "👋 Привет! Я бот VPN_GPT. Сейчас тестовый период — ключи выдаются бесплатно.\n"
         "\nВыбери действие в меню ниже, и я всё сделаю за тебя.",
@@ -225,6 +256,7 @@ async def renew(msg: Message):
 
 
 async def handle_issue_key(message: Message, username: str) -> None:
+    await _delete_previous_qr(message.chat.id)
     progress = await message.answer("⏳ Создаю для тебя VPN-ключ…")
     try:
         payload = await request_key(username)
@@ -247,13 +279,15 @@ async def handle_issue_key(message: Message, username: str) -> None:
 
     if link:
         qr = make_qr(link)
-        await message.answer_photo(
+        qr_message = await message.answer_photo(
             BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
             caption="📱 Отсканируй QR-код для быстрого подключения",
         )
+        await _qr_messages.remember(message.chat.id, qr_message.message_id)
 
 
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
+    await _delete_previous_qr(message.chat.id)
     progress = await message.answer("🔎 Проверяю информацию о твоём ключе…")
 
     try:
@@ -277,13 +311,15 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
 
     if link:
         qr = make_qr(link)
-        await message.answer_photo(
+        qr_message = await message.answer_photo(
             BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
             caption="📱 Отсканируй QR-код для быстрого подключения",
         )
+        await _qr_messages.remember(message.chat.id, qr_message.message_id)
 
 
 async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
+    await _delete_previous_qr(message.chat.id)
     progress = await message.answer("♻️ Продлеваю срок действия твоего ключа…")
 
     try:
@@ -319,10 +355,11 @@ async def handle_renew_key(message: Message, username: str, chat_id: int) -> Non
 
     if link:
         qr = make_qr(link)
-        await message.answer_photo(
+        qr_message = await message.answer_photo(
             BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
             caption="📱 Отсканируй QR-код для быстрого подключения",
         )
+        await _qr_messages.remember(message.chat.id, qr_message.message_id)
 
 
 @dp.callback_query(F.data == "issue_key")
@@ -357,6 +394,7 @@ async def show_menu(callback: CallbackQuery):
     await callback.answer()
     if not callback.message:
         return
+    await _delete_previous_qr(callback.message.chat.id)
     await callback.message.answer(
         "Выбери нужное действие:",
         reply_markup=build_main_menu(),
