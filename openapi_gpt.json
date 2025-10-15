@@ -11,8 +11,90 @@
         "tags": [
           "vpn"
         ],
-        "summary": "Issue Vpn Key",
-        "operationId": "issueVpnKey",
+        "summary": "Issue Key",
+        "operationId": "issue_key_vpn_issue_key_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -29,14 +111,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/IssueKeyResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/KeyResponse"
                 }
               }
             }
@@ -51,12 +126,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/vpn/renew_key": {
@@ -64,8 +134,90 @@
         "tags": [
           "vpn"
         ],
-        "summary": "Renew Vpn Key",
-        "operationId": "renewVpnKey",
+        "summary": "Renew Key",
+        "operationId": "renew_key_vpn_renew_key_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -82,14 +234,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/RenewKeyResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/KeyResponse"
                 }
               }
             }
@@ -104,27 +249,104 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
-    "/vpn/disable_key": {
+    "/users/register": {
       "post": {
         "tags": [
-          "vpn"
+          "users"
         ],
-        "summary": "Disable Vpn Key",
-        "operationId": "disableVpnKey",
+        "summary": "Register User",
+        "operationId": "register_user_users_register_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DisableKeyRequest"
+                "$ref": "#/components/schemas/RegisterRequest"
               }
             }
           }
@@ -135,14 +357,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/DisableKeyResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/RegisterResponse"
                 }
               }
             }
@@ -157,96 +372,16 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/morune/create_invoice": {
-      "post": {
-        "tags": [
-          "morune"
-        ],
-        "summary": "Create Morune Invoice",
-        "operationId": "moruneCreateInvoice",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MoruneCreateInvoiceRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MoruneCreateInvoiceResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request"
-          },
-          "422": {
-            "description": "Validation Error"
-          }
         }
       }
     },
-    "/morune/paid": {
-      "post": {
-        "tags": [
-          "morune"
-        ],
-        "summary": "Handle Morune Webhook",
-        "operationId": "moruneWebhookPaid",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MoruneWebhookResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid Signature"
-          },
-          "404": {
-            "description": "Order Not Found"
-          }
-        }
-      }
-    },
-    "/vpn/users/{username}": {
+    "/users/{username}/keys": {
       "get": {
         "tags": [
-          "vpn"
+          "users"
         ],
-        "summary": "Get User",
-        "operationId": "getUserByName",
+        "summary": "Get User Keys",
+        "operationId": "get_user_keys_users__username__keys_get",
         "parameters": [
           {
             "name": "username",
@@ -256,151 +391,95 @@
               "type": "string",
               "title": "Username"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetUserResponse"
-                }
-              }
-            }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
           {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/users/": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "List Users",
-        "description": "Return VPN users from the shared SQLite database.",
-        "operationId": "listUsers",
-        "parameters": [
-          {
-            "name": "active_only",
+            "name": "include_inactive",
             "in": "query",
             "required": false,
             "schema": {
               "type": "boolean",
               "default": true,
-              "title": "Active Only"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UsersListResponse"
-                }
-              }
+              "title": "Include Inactive"
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
           {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/users/expiring": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Expiring",
-        "description": "Return users whose subscription expires within the given number of days.",
-        "operationId": "listExpiringUsers",
-        "parameters": [
-          {
-            "name": "days",
+            "name": "x-admin-token",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "default": 1,
-              "title": "Days"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExpiringUsersResponse"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
                 }
-              }
+              ],
+              "title": "X-Admin-Token"
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
           {
-            "AdminToken": []
-          }
-        ]
-      }
-    },
-    "/users/userinfo": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Get Userinfo",
-        "description": "Return aggregated VPN user information.",
-        "operationId": "getUserInfo",
-        "parameters": [
-          {
-            "name": "username",
+            "name": "x-internal-token",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
-              "title": "Username"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
             }
           }
         ],
@@ -410,14 +489,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/UserInfoResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/KeysResponse"
                 }
               }
             }
@@ -435,21 +507,640 @@
         }
       }
     },
-    "/users/all": {
+    "/users/{username}/referrals": {
       "get": {
         "tags": [
           "users"
         ],
-        "summary": "List All Users",
-        "description": "Return all Telegram users stored in the local table.",
-        "operationId": "listTelegramUsers",
+        "summary": "Referral Stats",
+        "operationId": "referral_stats_users__username__referrals_get",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Username"
+            }
+          },
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AllTelegramUsersResponse"
+                  "$ref": "#/components/schemas/ReferralStatsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/create": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Create Payment",
+        "operationId": "create_payment_payments_create_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePaymentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/public/create": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Public Create Payment",
+        "operationId": "public_create_payment_payments_public_create_post",
+        "parameters": [
+          {
+            "name": "X-Form-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Form-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicCreatePaymentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePaymentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/confirm": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Confirm Payment",
+        "operationId": "confirm_payment_payments_confirm_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPaymentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmPaymentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/morune/webhook": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Morune Webhook",
+        "operationId": "morune_webhook_payments_morune_webhook_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConfirmPaymentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WebhookAck"
+                    }
+                  ],
+                  "title": "Response Morune Webhook Payments Morune Webhook Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/morune/create_invoice": {
+      "post": {
+        "tags": [
+          "morune"
+        ],
+        "summary": "Create Invoice Endpoint",
+        "operationId": "create_invoice_endpoint_morune_create_invoice_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateInvoiceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/morune/paid": {
+      "post": {
+        "tags": [
+          "morune"
+        ],
+        "summary": "Morune Paid",
+        "operationId": "morune_paid_morune_paid_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/referral/use": {
+      "post": {
+        "tags": [
+          "referral"
+        ],
+        "summary": "Use Referral",
+        "operationId": "use_referral_referral_use_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Admin-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "X-Internal-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferralUseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferralUseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -464,32 +1155,13 @@
         ],
         "summary": "Send Message",
         "description": "Отправка сообщения пользователю по username через сохранённый chat_id.",
-        "operationId": "notifyBroadcast",
+        "operationId": "send_message_notify_notify_send_post",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/NotifySuccessResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NotifyRequest"
+                "schema": {}
               }
             }
           }
@@ -502,15 +1174,31 @@
           "admin"
         ],
         "summary": "Backup Db",
-        "operationId": "backupDatabase",
+        "operationId": "backup_db_admin_backup_db_post",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BackupDatabaseResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -524,76 +1212,28 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ]
+        }
       }
     },
     "/healthz": {
       "get": {
         "summary": "Healthz",
         "description": "Simple health-check endpoint used for monitoring.",
-        "operationId": "healthz",
+        "operationId": "healthz_healthz_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthzResponse"
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/vpn/my_key": {
-      "get": {
-        "operationId": "getMyKey",
-        "summary": "Получить активный ключ пользователя",
-        "security": [],
-        "parameters": [
-          {
-            "name": "username",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "chat_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/IssueKeyResponse"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error"
           }
         }
       }
@@ -601,18 +1241,385 @@
   },
   "components": {
     "schemas": {
-      "DisableKeyRequest": {
+      "ConfirmPaymentRequest": {
         "properties": {
-          "uuid": {
+          "payment_id": {
             "type": "string",
-            "title": "Uuid"
+            "title": "Payment Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "provider_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Status"
+          },
+          "payment_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Url"
+          },
+          "raw_provider_payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Provider Payload"
           }
         },
         "type": "object",
         "required": [
-          "uuid"
+          "payment_id",
+          "username",
+          "plan"
         ],
-        "title": "DisableKeyRequest"
+        "title": "ConfirmPaymentRequest"
+      },
+      "ConfirmPaymentResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "payment_id": {
+            "type": "string",
+            "title": "Payment Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "key_uuid": {
+            "type": "string",
+            "title": "Key Uuid"
+          },
+          "payment_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payment_id",
+          "username",
+          "plan",
+          "amount",
+          "currency",
+          "status",
+          "expires_at",
+          "key_uuid"
+        ],
+        "title": "ConfirmPaymentResponse"
+      },
+      "CreateInvoiceRequest": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan",
+            "description": "Tariff code"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username",
+            "description": "Telegram username without @. Optional if prefilled by bot."
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan"
+        ],
+        "title": "CreateInvoiceRequest"
+      },
+      "CreateInvoiceResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "payment_url": {
+            "type": "string",
+            "title": "Payment Url"
+          },
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payment_url",
+          "order_id"
+        ],
+        "title": "CreateInvoiceResponse"
+      },
+      "CreatePaymentRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan",
+            "description": "Код тарифа"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount",
+            "description": "Сумма оплаты, если рассчитывается внешне"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency",
+            "description": "Код валюты ISO 4217"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer",
+            "description": "Реферальный идентификатор"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Дополнительные метаданные платежа"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Источник (telegram/api/site)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "plan"
+        ],
+        "title": "CreatePaymentRequest"
+      },
+      "CreatePaymentResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "payment_id": {
+            "type": "string",
+            "title": "Payment Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Payment Id"
+          },
+          "payment_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payment_id",
+          "username",
+          "plan",
+          "amount",
+          "currency",
+          "status"
+        ],
+        "title": "CreatePaymentResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -634,7 +1641,7 @@
             "title": "Username",
             "description": "Telegram username без @"
           },
-          "days": {
+          "chat_id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -643,9 +1650,38 @@
                 "type": "null"
               }
             ],
-            "title": "Days",
-            "description": "Количество дней действия ключа",
-            "default": 3
+            "title": "Chat Id",
+            "description": "Telegram chat identifier"
+          },
+          "trial": {
+            "type": "boolean",
+            "title": "Trial",
+            "description": "Разрешить выдачу тестового периода",
+            "default": true
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country",
+            "description": "Код выбранной страны"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Метка для VLESS ссылки"
           }
         },
         "type": "object",
@@ -654,7 +1690,7 @@
         ],
         "title": "IssueKeyRequest"
       },
-      "IssueKeyResponse": {
+      "KeyResponse": {
         "properties": {
           "ok": {
             "type": "boolean",
@@ -677,22 +1713,277 @@
             "type": "string",
             "title": "Expires At"
           },
-          "active": {
+          "trial": {
             "type": "boolean",
-            "title": "Active",
-            "default": true
+            "title": "Trial",
+            "default": false
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused",
+            "default": false
           }
         },
         "type": "object",
         "required": [
-          "ok",
           "username",
           "uuid",
           "link",
-          "expires_at",
-          "active"
+          "expires_at"
         ],
-        "title": "IssueKeyResponse"
+        "title": "KeyResponse"
+      },
+      "KeysResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "keys": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "keys"
+        ],
+        "title": "KeysResponse"
+      },
+      "PublicCreatePaymentRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "plan"
+        ],
+        "title": "PublicCreatePaymentRequest"
+      },
+      "ReferralStatsResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "total_referrals": {
+            "type": "integer",
+            "title": "Total Referrals"
+          },
+          "total_days": {
+            "type": "integer",
+            "title": "Total Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "total_referrals",
+          "total_days"
+        ],
+        "title": "ReferralStatsResponse"
+      },
+      "ReferralUseRequest": {
+        "properties": {
+          "referrer": {
+            "type": "string",
+            "title": "Referrer",
+            "description": "Код пригласившего"
+          },
+          "referee": {
+            "type": "string",
+            "title": "Referee",
+            "description": "Приглашённый пользователь"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "referrer",
+          "referee"
+        ],
+        "title": "ReferralUseRequest"
+      },
+      "ReferralUseResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "referrer": {
+            "type": "string",
+            "title": "Referrer"
+          },
+          "referee": {
+            "type": "string",
+            "title": "Referee"
+          },
+          "already_exists": {
+            "type": "boolean",
+            "title": "Already Exists",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "referrer",
+          "referee"
+        ],
+        "title": "ReferralUseResponse"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "description": "Telegram username без @"
+          },
+          "chat_id": {
+            "type": "integer",
+            "title": "Chat Id",
+            "description": "Идентификатор чата Telegram"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer",
+            "description": "Код реферала"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "chat_id"
+        ],
+        "title": "RegisterRequest"
+      },
+      "RegisterResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "chat_id": {
+            "type": "integer",
+            "title": "Chat Id"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "chat_id"
+        ],
+        "title": "RegisterResponse"
       },
       "RenewKeyRequest": {
         "properties": {
@@ -700,10 +1991,62 @@
             "type": "string",
             "title": "Username"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan",
+            "description": "Код тарифа (1m,3m,12m)"
+          },
           "days": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Days",
-            "default": 30
+            "description": "Произвольное продление в днях"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           }
         },
         "type": "object",
@@ -745,399 +2088,52 @@
         ],
         "title": "ValidationError"
       },
-      "ErrorResponse": {
-        "title": "ErrorResponse",
+      "WebhookAck": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
         "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "WebhookAck"
+      },
+      "WebhookResponse": {
         "properties": {
           "ok": {
             "type": "boolean",
             "title": "Ok",
-            "default": false
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          }
-        },
-        "required": [
-          "ok",
-          "error"
-        ]
-      },
-      "NotifyRequest": {
-        "type": "object",
-        "required": [
-          "username",
-          "text"
-        ],
-        "properties": {
-          "username": {
-            "type": "string",
-            "description": "Telegram username без @"
-          },
-          "text": {
-            "type": "string",
-            "description": "Message text to send"
-          }
-        },
-        "title": "NotifyRequest"
-      },
-      "MoruneCreateInvoiceRequest": {
-        "type": "object",
-        "required": [
-          "plan"
-        ],
-        "properties": {
-          "plan": {
-            "type": "string",
-            "enum": [
-              "1m",
-              "3m",
-              "1y"
-            ],
-            "description": "Tariff code"
-          },
-          "username": {
-            "type": "string",
-            "description": "Telegram username без @",
-            "nullable": true
-          }
-        },
-        "title": "MoruneCreateInvoiceRequest"
-      },
-      "MoruneCreateInvoiceResponse": {
-        "type": "object",
-        "required": [
-          "ok",
-          "payment_url",
-          "order_id"
-        ],
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "payment_url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "order_id": {
-            "type": "string"
-          }
-        },
-        "title": "MoruneCreateInvoiceResponse"
-      },
-      "MoruneWebhookResponse": {
-        "type": "object",
-        "required": [
-          "ok"
-        ],
-        "properties": {
-          "ok": {
-            "type": "boolean",
             "default": true
           }
         },
-        "title": "MoruneWebhookResponse"
-      },
-      "RenewKeyResponse": {
         "type": "object",
-        "title": "RenewKeyResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "username": {
-            "type": "string"
-          },
-          "expires_at": {
-            "type": "string",
-            "description": "ISO 8601 expiry timestamp"
-          }
-        },
-        "required": [
-          "ok",
-          "username",
-          "expires_at"
-        ]
-      },
-      "DisableKeyResponse": {
-        "type": "object",
-        "title": "DisableKeyResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "uuid": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "ok",
-          "uuid"
-        ]
-      },
-      "VpnKeySummary": {
-        "type": "object",
-        "title": "VpnKeySummary",
-        "properties": {
-          "uuid": {
-            "type": "string"
-          },
-          "active": {
-            "type": "boolean"
-          },
-          "expires_at": {
-            "type": "string",
-            "nullable": true
-          },
-          "link": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "required": [
-          "uuid",
-          "active",
-          "expires_at",
-          "link"
-        ]
-      },
-      "GetUserResponse": {
-        "type": "object",
-        "title": "GetUserResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "username": {
-            "type": "string"
-          },
-          "keys": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VpnKeySummary"
-            }
-          }
-        },
-        "required": [
-          "ok",
-          "username",
-          "keys"
-        ]
-      },
-      "VpnUserRecord": {
-        "type": "object",
-        "title": "VpnUserRecord",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "nullable": true
-          },
-          "user_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "chat_id": {
-            "type": "integer",
-            "nullable": true
-          },
-          "username": {
-            "type": "string",
-            "nullable": true
-          },
-          "uuid": {
-            "type": "string",
-            "nullable": true
-          },
-          "link": {
-            "type": "string",
-            "nullable": true
-          },
-          "issued": {
-            "type": "string",
-            "nullable": true
-          },
-          "expires": {
-            "type": "string",
-            "nullable": true
-          },
-          "issued_at": {
-            "type": "string",
-            "nullable": true
-          },
-          "expires_at": {
-            "type": "string",
-            "nullable": true
-          },
-          "active": {
-            "type": "integer",
-            "nullable": true
-          }
-        }
-      },
-      "UsersListResponse": {
-        "type": "object",
-        "title": "UsersListResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VpnUserRecord"
-            }
-          }
-        },
-        "required": [
-          "ok",
-          "users"
-        ]
-      },
-      "ExpiringUsersResponse": {
-        "type": "object",
-        "title": "ExpiringUsersResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VpnUserRecord"
-            }
-          }
-        },
-        "required": [
-          "ok",
-          "users"
-        ]
-      },
-      "UserInfoResponse": {
-        "type": "object",
-        "title": "UserInfoResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "user": {
-            "$ref": "#/components/schemas/VpnUserRecord"
-          }
-        },
-        "required": [
-          "ok",
-          "user"
-        ]
-      },
-      "TelegramUser": {
-        "type": "object",
-        "title": "TelegramUser",
-        "properties": {
-          "username": {
-            "type": "string"
-          },
-          "chat_id": {
-            "type": "integer",
-            "nullable": true
-          }
-        },
-        "required": [
-          "username",
-          "chat_id"
-        ]
-      },
-      "AllTelegramUsersResponse": {
-        "type": "object",
-        "title": "AllTelegramUsersResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TelegramUser"
-            }
-          }
-        },
-        "required": [
-          "ok",
-          "users"
-        ]
-      },
-      "NotifySuccessResponse": {
-        "type": "object",
-        "title": "NotifySuccessResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "username": {
-            "type": "string"
-          },
-          "chat_id": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "ok",
-          "username",
-          "chat_id"
-        ]
-      },
-      "BackupDatabaseResponse": {
-        "type": "object",
-        "title": "BackupDatabaseResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          },
-          "backup": {
-            "type": "string",
-            "description": "Filesystem path to the created backup"
-          }
-        },
-        "required": [
-          "ok",
-          "backup"
-        ]
-      },
-      "HealthzResponse": {
-        "type": "object",
-        "title": "HealthzResponse",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "default": true
-          }
-        },
-        "required": [
-          "ok"
-        ]
-      }
-    },
-    "securitySchemes": {
-      "AdminToken": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Admin-Token",
-        "description": "Admin token required for privileged operations. Provide the value configured in the service."
+        "title": "WebhookResponse"
       }
     }
-  },
-  "servers": [
-    {
-      "url": "https://vpn-gpt.store/api"
-    }
-  ]
+  }
 }
