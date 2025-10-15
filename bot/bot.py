@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from aiogram import Bot, Dispatcher, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import (
     BufferedInputFile,
@@ -104,6 +104,27 @@ _qr_messages = _QrMessageTracker()
 _qr_links = _QrLinkStorage()
 
 
+class _QrCleanupMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):  # type: ignore[override]
+        chat_id: int | None = None
+
+        if isinstance(event, CallbackQuery):
+            if event.data == "show_qr":
+                return await handler(event, data)
+            if event.message:
+                chat_id = event.message.chat.id
+        elif isinstance(event, Message):
+            chat_id = event.chat.id
+
+        if chat_id is None:
+            return await handler(event, data)
+
+        try:
+            return await handler(event, data)
+        finally:
+            await _delete_previous_qr(chat_id)
+
+
 async def _delete_previous_qr(chat_id: int) -> None:
     await _qr_links.forget(chat_id)
     message_id = await _qr_messages.pop(chat_id)
@@ -116,6 +137,11 @@ async def _delete_previous_qr(chat_id: int) -> None:
             "Failed to delete previous QR message",
             extra={"chat_id": chat_id, "message_id": message_id},
         )
+
+
+_qr_cleanup_middleware = _QrCleanupMiddleware()
+dp.message.middleware.register(_qr_cleanup_middleware)
+dp.callback_query.middleware.register(_qr_cleanup_middleware)
 
 
 def _load_api_urls() -> list[str]:
