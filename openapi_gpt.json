@@ -746,6 +746,48 @@
         }
       }
     },
+    "/notify/broadcast": {
+      "post": {
+        "tags": [
+          "notify"
+        ],
+        "summary": "Broadcast Message",
+        "description": "Массовая рассылка сообщений всем Telegram-пользователям с известным chat_id.",
+        "operationId": "notify_broadcast_notify_broadcast_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/notify/notify/send": {
       "post": {
         "tags": [
@@ -817,6 +859,42 @@
   },
   "components": {
     "schemas": {
+      "BroadcastRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "BroadcastRequest"
+      },
+      "BroadcastResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "sent": {
+            "type": "integer",
+            "title": "Sent"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "sent",
+          "total"
+        ],
+        "title": "BroadcastResponse"
+      },
       "ConfirmPaymentRequest": {
         "properties": {
           "payment_id": {
