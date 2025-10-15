@@ -9,9 +9,21 @@ logger = get_logger("endpoints.security")
 
 
 def require_service_token(
-    authorization: str | None = Header(default=None, alias="Authorization"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
-    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    authorization: str | None = Header(
+        default=None,
+        alias="Authorization",
+        include_in_schema=False,
+    ),
+    x_admin_token: str | None = Header(
+        default=None,
+        alias="X-Admin-Token",
+        include_in_schema=False,
+    ),
+    x_internal_token: str | None = Header(
+        default=None,
+        alias="X-Internal-Token",
+        include_in_schema=False,
+    ),
     x_admin_query: str | None = Query(default=None, alias="x-admin-token"),
     x_internal_query: str | None = Query(default=None, alias="x-internal-token"),
 ) -> None:

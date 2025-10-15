@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from api.utils.logging import configure_logging, get_logger
 from api.config import (
@@ -62,6 +63,12 @@ renewal_notification_scheduler = RenewalNotificationScheduler(
 )
 
 
+class HealthResponse(BaseModel):
+    """Schema describing the payload returned by the health-check endpoint."""
+
+    ok: bool = Field(..., description="Indicates whether the service is operating normally.")
+
+
 @app.on_event("startup")
 def ensure_database() -> None:
     """Initialise the SQLite database schema if it does not exist."""
@@ -95,11 +102,11 @@ def stop_background_tasks() -> None:
 
 
 # === Health check ===
-@app.get("/healthz")
-def healthz() -> dict[str, bool]:
+@app.get("/healthz", response_model=HealthResponse)
+def healthz() -> HealthResponse:
     """Simple health-check endpoint used for monitoring."""
     logger.debug("Health check endpoint called")
-    return {"ok": True}
+    return HealthResponse(ok=True)
 
 
 # === Global error handler ===
@@ -126,7 +133,9 @@ def custom_openapi() -> dict[str, Any]:
 
     server_url = os.getenv("OPENAPI_SERVER_URL")
     if server_url:
-        openapi_schema["servers"] = [{"url": server_url}]
+        openapi_schema["servers"] = [
+            {"url": server_url, "description": "Production deployment"}
+        ]
         logger.info("Configured OpenAPI server override: %s", server_url)
 
     app.openapi_schema = openapi_schema

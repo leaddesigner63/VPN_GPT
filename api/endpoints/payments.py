@@ -450,7 +450,11 @@ def create_payment(request: CreatePaymentRequest, _: None = Depends(require_serv
 @router.post("/public/create", response_model=CreatePaymentResponse)
 def public_create_payment(
     request: PublicCreatePaymentRequest,
-    x_form_token: str | None = Header(None, alias="X-Form-Token"),
+    x_form_token: str | None = Header(
+        None,
+        alias="X-Form-Token",
+        include_in_schema=False,
+    ),
 ):
     if PAYMENTS_PUBLIC_TOKEN:
         if x_form_token != PAYMENTS_PUBLIC_TOKEN:

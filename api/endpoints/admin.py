@@ -25,7 +25,13 @@ def require_admin(x_admin_token: str | None):
     logger.debug("Authorized admin request")
 
 @router.post("/backup_db")
-def backup_db(x_admin_token: str | None = Header(default=None)):
+def backup_db(
+    x_admin_token: str | None = Header(
+        default=None,
+        alias="X-Admin-Token",
+        include_in_schema=False,
+    )
+):
     require_admin(x_admin_token)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     backup_dir = Path(os.getenv("BACKUP_DIR", DB_PATH.parent))

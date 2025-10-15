@@ -5,12 +5,6 @@
     "description": "API for GPT Actions — manage VPN keys, users, and notifications",
     "version": "1.0.0"
   },
-  "servers": [
-    {
-      "url": "https://vpn-gpt.store/api",
-      "description": "Production deployment"
-    }
-  ],
   "paths": {
     "/vpn/issue_key": {
       "post": {
@@ -39,54 +33,6 @@
           {
             "name": "x-internal-token",
             "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
             "required": false,
             "schema": {
               "anyOf": [
@@ -174,54 +120,6 @@
               ],
               "title": "X-Internal-Token"
             }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
           }
         ],
         "requestBody": {
@@ -285,54 +183,6 @@
           {
             "name": "x-internal-token",
             "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
             "required": false,
             "schema": {
               "anyOf": [
@@ -439,54 +289,6 @@
               ],
               "title": "X-Internal-Token"
             }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
           }
         ],
         "responses": {
@@ -549,54 +351,6 @@
           {
             "name": "x-internal-token",
             "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
             "required": false,
             "schema": {
               "anyOf": [
@@ -674,54 +428,6 @@
               ],
               "title": "X-Internal-Token"
             }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
           }
         ],
         "requestBody": {
@@ -765,33 +471,15 @@
         ],
         "summary": "Public Create Payment",
         "operationId": "public_create_payment_payments_public_create_post",
-        "parameters": [
-          {
-            "name": "X-Form-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Form-Token"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PublicCreatePaymentRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -844,54 +532,6 @@
           {
             "name": "x-internal-token",
             "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1070,54 +710,6 @@
               ],
               "title": "X-Internal-Token"
             }
-          },
-          {
-            "name": "Authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          },
-          {
-            "name": "X-Admin-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          },
-          {
-            "name": "X-Internal-Token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Internal-Token"
-            }
           }
         ],
         "requestBody": {
@@ -1181,24 +773,6 @@
         ],
         "summary": "Backup Db",
         "operationId": "backup_db_admin_backup_db_post",
-        "parameters": [
-          {
-            "name": "x-admin-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Admin-Token"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1232,11 +806,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "boolean"
-                  },
-                  "type": "object",
-                  "title": "Response Healthz Healthz Get"
+                  "$ref": "#/components/schemas/HealthResponse"
                 }
               }
             }
@@ -1639,6 +1209,21 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "description": "Indicates whether the service is operating normally."
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "HealthResponse",
+        "description": "Schema describing the payload returned by the health-check endpoint."
       },
       "IssueKeyRequest": {
         "properties": {
@@ -2141,5 +1726,11 @@
         "title": "WebhookResponse"
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "https://vpn-gpt.store/api",
+      "description": "Production deployment"
+    }
+  ]
 }
