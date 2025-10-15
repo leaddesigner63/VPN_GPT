@@ -309,18 +309,22 @@ class MoruneClient:
         self.shop_id = shop_id
         self.webhook_secret = webhook_secret
         self.timeout = timeout
-        self._client = httpx.Client(timeout=timeout)
+        self._client = httpx.Client(timeout=timeout, trust_env=False)
 
     def close(self) -> None:
         self._client.close()
 
     def _headers(self) -> dict[str, str]:
         token = self.api_key.strip()
-        return {
+        headers = {
             "X-Api-Key": token,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+        if self.shop_id:
+            headers.setdefault("X-Shop-Id", self.shop_id)
+            headers.setdefault("X-Project-Id", self.shop_id)
+        return headers
 
     def _request(
         self,
@@ -330,12 +334,14 @@ class MoruneClient:
         json_payload: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
+        request_kwargs: dict[str, Any] = {"headers": self._headers()}
+        if json_payload is not None:
+            request_kwargs["json"] = json_payload
         try:
             response = self._client.request(
                 method,
                 url,
-                json=json_payload,
-                headers=self._headers(),
+                **request_kwargs,
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:  # pragma: no cover - network errors
@@ -347,30 +353,97 @@ class MoruneClient:
             logger.exception("Morune API returned invalid JSON", extra={"url": url})
             raise MoruneAPIError("invalid_json") from exc
 
+    def _get_default_service(self) -> str:
+        data = self._request(
+            "GET",
+            f"/shops/{self.shop_id}/payment-tariffs",
+            json_payload=None,
+        )
+
+        def _iter_tariffs(payload: Any) -> list[dict[str, Any]]:
+            if isinstance(payload, list):
+                return [item for item in payload if isinstance(item, dict)]
+            if isinstance(payload, Mapping):
+                for key in ("data", "items", "results", "tariffs"):
+                    nested = payload.get(key)
+                    if isinstance(nested, list):
+                        return [item for item in nested if isinstance(item, dict)]
+                attributes = payload.get("attributes")
+                if isinstance(attributes, list):
+                    return [item for item in attributes if isinstance(item, dict)]
+            return []
+
+        tariffs = _iter_tariffs(data)
+        if not tariffs and isinstance(data, Mapping):
+            nested = data.get("data")
+            if isinstance(nested, Mapping):
+                tariffs = _iter_tariffs(nested)
+
+        for tariff in tariffs:
+            status_value: Any = tariff.get("status")
+            if status_value is None and isinstance(tariff.get("attributes"), Mapping):
+                status_value = tariff["attributes"].get("status")
+            if isinstance(status_value, str):
+                is_enabled = status_value.lower() == "enabled"
+            elif isinstance(status_value, bool):
+                is_enabled = status_value
+            else:
+                is_enabled = False
+            if not is_enabled:
+                continue
+
+            include_value: Any = tariff.get("include_service")
+            if include_value is None and isinstance(tariff.get("attributes"), Mapping):
+                include_value = tariff["attributes"].get("include_service")
+            if include_value is None:
+                include_value = tariff.get("service") or tariff.get("code") or tariff.get("id")
+
+            if isinstance(include_value, list):
+                for candidate in include_value:
+                    if candidate:
+                        return str(candidate)
+            elif include_value:
+                return str(include_value)
+
+        logger.error("No enabled Morune payment tariffs found", extra={"shop_id": self.shop_id})
+        raise MoruneAPIError("morune_tariff_not_found")
+
     def create_invoice(
         self,
         *,
         payment_id: str,
         amount: int,
         currency: str,
-        description: str,
-        metadata: Mapping[str, Any] | None,
+        comment: str,
         success_url: str | None,
         fail_url: str | None,
+        hook_url: str | None,
+        include_service: Sequence[str] | None,
+        expire: int | None,
+        custom_fields: str | None,
     ) -> MoruneInvoice:
         payload: dict[str, Any] = {
             "shop_id": self.shop_id,
-            "amount": amount,
+            "amount": int(amount),
             "currency": currency,
             "order_id": payment_id,
-            "description": description,
+            "comment": comment,
         }
-        if metadata:
-            payload["metadata"] = dict(metadata)
         if success_url:
             payload["success_url"] = success_url
         if fail_url:
             payload["fail_url"] = fail_url
+        if hook_url:
+            payload["hook_url"] = hook_url
+        if expire is not None:
+            payload["expire"] = expire
+        if custom_fields:
+            payload["custom_fields"] = custom_fields
+
+        services = [str(item) for item in (include_service or []) if item]
+        if not services:
+            services.append(self._get_default_service())
+        payload["include_service"] = services
 
         data = self._request("POST", "/invoice/create", json_payload=payload)
         extracted = self._extract_invoice_fields(

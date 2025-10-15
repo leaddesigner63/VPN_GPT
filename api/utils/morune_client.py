@@ -5,7 +5,6 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -37,6 +36,105 @@ class InvoiceCreateResult:
     raw: dict[str, Any]
 
 
+async def get_default_service(
+    *, client: httpx.AsyncClient | None = None
+) -> str:
+    """Return the first enabled payment tariff for the configured shop."""
+
+    if not (MORUNE_API_KEY and MORUNE_SHOP_ID):
+        logger.error("Morune configuration is incomplete")
+        raise legacy_morune.MoruneConfigurationError("morune_not_configured")
+
+    headers = {
+        "x-api-key": MORUNE_API_KEY,
+        "accept": "application/json",
+    }
+    if MORUNE_SHOP_ID:
+        headers.setdefault("x-shop-id", MORUNE_SHOP_ID)
+        headers.setdefault("x-project-id", MORUNE_SHOP_ID)
+
+    own_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0), trust_env=False)
+        own_client = True
+
+    try:
+        try:
+            response = await client.get(
+                f"{MORUNE_BASE_URL}/shops/{MORUNE_SHOP_ID}/payment-tariffs",
+                headers=headers,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure
+            logger.exception(
+                "Morune payment tariffs request failed",
+                extra={"shop_id": MORUNE_SHOP_ID, "error": str(exc)},
+            )
+            raise legacy_morune.MoruneAPIError("morune_request_failed") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:  # pragma: no cover - invalid JSON
+            logger.exception(
+                "Morune returned invalid tariffs JSON",
+                extra={"shop_id": MORUNE_SHOP_ID},
+            )
+            raise legacy_morune.MoruneAPIError("morune_invalid_json") from exc
+    finally:
+        if own_client:
+            await client.aclose()
+
+    def _iter_tariffs(data: Any) -> list[dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            for key in ("data", "items", "results", "tariffs"):
+                nested = data.get(key)
+                if isinstance(nested, list):
+                    return [item for item in nested if isinstance(item, dict)]
+            attributes = data.get("attributes")
+            if isinstance(attributes, list):
+                return [item for item in attributes if isinstance(item, dict)]
+        return []
+
+    tariffs = _iter_tariffs(payload)
+    if not tariffs and isinstance(payload, dict):
+        attributes = payload.get("data")
+        if isinstance(attributes, dict):
+            tariffs = _iter_tariffs(attributes)
+
+    for tariff in tariffs:
+        status_value: Any = tariff.get("status")
+        if status_value is None and isinstance(tariff.get("attributes"), dict):
+            status_value = tariff["attributes"].get("status")
+        if isinstance(status_value, str):
+            status_normalized = status_value.lower()
+            is_enabled = status_normalized == "enabled"
+        elif isinstance(status_value, bool):
+            is_enabled = status_value
+        else:
+            is_enabled = False
+        if not is_enabled:
+            continue
+
+        include_value: Any = tariff.get("include_service")
+        if include_value is None and isinstance(tariff.get("attributes"), dict):
+            include_value = tariff["attributes"].get("include_service")
+        if include_value is None:
+            include_value = tariff.get("service") or tariff.get("code") or tariff.get("id")
+
+        if isinstance(include_value, list):
+            for item in include_value:
+                if item:
+                    return str(item)
+            continue
+        if include_value:
+            return str(include_value)
+
+    logger.error("No enabled Morune payment tariffs found", extra={"shop_id": MORUNE_SHOP_ID})
+    raise legacy_morune.MoruneAPIError("morune_tariff_not_found")
+
+
 async def create_invoice(
     amount: int,
     order_id: str,
@@ -54,48 +152,10 @@ async def create_invoice(
     currency_code = (MORUNE_DEFAULT_CURRENCY or "RUB").upper()
     metadata_payload = dict(metadata or {})
 
-    payload: dict[str, Any] = {
-        "amount": int(amount),
-        "order_id": order_id,
-        "currency": currency_code,
-        "comment": f"VPN_GPT {plan}",
-        "success_url": MORUNE_SUCCESS_URL,
-        "fail_url": MORUNE_FAIL_URL,
-        "hook_url": MORUNE_HOOK_URL,
-        "shop_id": MORUNE_SHOP_ID,
-        "include_service": ["card"],
-    }
-
-    order_block: dict[str, Any] = {
-        "id": order_id,
-        "amount": {
-            "value": format(Decimal(amount), "0.2f"),
-            "currency": currency_code,
-        },
-        "description": f"VPN_GPT {plan}",
-    }
-
     custom_fields: dict[str, Any] = {"plan": plan}
     if username:
         custom_fields["username"] = username
-        order_block["customer"] = {"account": username}
 
-    if metadata_payload:
-        payload["metadata"] = metadata_payload
-        order_block["metadata"] = metadata_payload
-
-    settings_block = {
-        "success_url": MORUNE_SUCCESS_URL,
-        "fail_url": MORUNE_FAIL_URL,
-        "notification_url": MORUNE_HOOK_URL,
-    }
-
-    payload["order"] = order_block
-    payload["settings"] = {key: value for key, value in settings_block.items() if value}
-    payload["payment_methods"] = ["card"]
-    payload["custom_fields"] = json.dumps(custom_fields, ensure_ascii=False)
-
-    url = f"{MORUNE_BASE_URL}/invoice/create"
     headers = {
         "x-api-key": MORUNE_API_KEY,
         "accept": "application/json",
@@ -105,21 +165,43 @@ async def create_invoice(
         headers.setdefault("x-shop-id", MORUNE_SHOP_ID)
         headers.setdefault("x-project-id", MORUNE_SHOP_ID)
 
+    payload: dict[str, Any] = {
+        "amount": int(amount),
+        "order_id": order_id,
+        "currency": currency_code,
+        "comment": f"VPN_GPT {plan}",
+        "success_url": MORUNE_SUCCESS_URL,
+        "fail_url": MORUNE_FAIL_URL,
+        "hook_url": MORUNE_HOOK_URL,
+        "shop_id": MORUNE_SHOP_ID,
+        "expire": 300,
+        "custom_fields": json.dumps(custom_fields, ensure_ascii=False, separators=(",", ":")),
+    }
+    url = f"{MORUNE_BASE_URL}/invoice/create"
     logger.info(
         "Creating Morune invoice",
         extra={"order_id": order_id, "plan": plan, "amount": amount},
     )
+    if metadata_payload:
+        logger.debug(
+            "Morune invoice metadata provided",
+            extra={"order_id": order_id, "keys": list(metadata_payload.keys())},
+        )
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0), trust_env=False
+        ) as client:
+            include_service = await get_default_service(client=client)
+            payload["include_service"] = [include_service]
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
-        except httpx.HTTPError as exc:  # pragma: no cover - network failure
-            logger.exception(
-                "Morune invoice request failed",
-                extra={"order_id": order_id, "status_code": getattr(exc.response, "status_code", None)},
-            )
-            raise legacy_morune.MoruneAPIError("morune_request_failed") from exc
+    except httpx.HTTPError as exc:  # pragma: no cover - network failure
+        logger.exception(
+            "Morune invoice request failed",
+            extra={"order_id": order_id, "status_code": getattr(exc.response, "status_code", None)},
+        )
+        raise legacy_morune.MoruneAPIError("morune_request_failed") from exc
 
     try:
         data = response.json()
@@ -169,14 +251,36 @@ async def create_invoice(
 
 
 def verify_signature(raw_body: bytes, header_sig: str | None) -> bool:
-    """Validate Morune webhook HMAC signature."""
+    """Validate Morune webhook HMAC signature using sorted JSON payload."""
 
     if not MORUNE_WEBHOOK_SECRET:
         raise legacy_morune.MoruneConfigurationError("morune_webhook_secret_missing")
     if not header_sig:
         return False
-    digest = hmac.new(MORUNE_WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    try:
+        parsed = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.warning("Failed to decode Morune webhook payload for signature validation")
+        return False
+
+    sorted_json = json.dumps(
+        parsed,
+        ensure_ascii=False,
+        separators=(",", ": "),
+        sort_keys=True,
+    )
+    digest = hmac.new(
+        MORUNE_WEBHOOK_SECRET.encode("utf-8"),
+        sorted_json.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
     return hmac.compare_digest(digest, header_sig)
 
 
-__all__ = ["InvoiceCreateResult", "create_invoice", "verify_signature"]
+__all__ = [
+    "InvoiceCreateResult",
+    "create_invoice",
+    "get_default_service",
+    "verify_signature",
+]
