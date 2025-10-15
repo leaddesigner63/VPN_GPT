@@ -368,6 +368,30 @@ def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def _markups_equal(
+    first: InlineKeyboardMarkup | None, second: InlineKeyboardMarkup | None
+) -> bool:
+    if first is second:
+        return True
+    if first is None or second is None:
+        return first is None and second is None
+    try:
+        return first.model_dump(exclude_none=True) == second.model_dump(exclude_none=True)
+    except AttributeError:  # pragma: no cover - fallback for unexpected types
+        return first == second
+
+
+async def edit_message_text_safe(
+    message: Message,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    if message.text == text and _markups_equal(message.reply_markup, reply_markup):
+        return False
+    await message.edit_text(text, reply_markup=reply_markup)
+    return True
+
+
 def _get_history(chat_id: int) -> ConversationHistory:
     return _histories[chat_id]
 
@@ -722,9 +746,12 @@ async def handle_start(message: Message, state: FSMContext) -> None:
 @dp.callback_query(F.data == MENU_BACK)
 async def handle_menu_back(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
-    await call.message.edit_text("Выбери действие:", reply_markup=build_main_menu())
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
+    await edit_message_text_safe(message, "Выбери действие:", reply_markup=build_main_menu())
     await call.answer()
 
 
@@ -734,13 +761,17 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
-    await register_user(username, call.message.chat.id, None)
-    payload = await issue_trial_key(username, call.message.chat.id)
+    await register_user(username, message.chat.id, None)
+    payload = await issue_trial_key(username, message.chat.id)
     if not payload:
-        await call.message.edit_text(
+        await edit_message_text_safe(
+            message,
             "⚠️ Не удалось выдать ключ. Попробуй позже или свяжись с поддержкой.",
             reply_markup=build_back_menu(),
         )
@@ -748,7 +779,8 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         return
 
     if payload.get("error") == "service_unavailable":
-        await call.message.edit_text(
+        await edit_message_text_safe(
+            message,
             "😔 Сейчас не удаётся выдать ключи — сервис недоступен. "
             "Мы уже работаем над решением. Попробуй позже или напиши в поддержку.",
             reply_markup=build_back_menu(),
@@ -757,7 +789,8 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         return
 
     if payload.get("error") == "trial_already_used":
-        await call.message.edit_text(
+        await edit_message_text_safe(
+            message,
             "У тебя уже есть активный тестовый ключ. Посмотри его в разделе «Мои ключи».",
             reply_markup=build_back_menu(),
         )
@@ -769,11 +802,11 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         "🎁 Готово! Твой тестовый доступ активирован."\
         + "\n\n" + format_key_message(payload)
     )
-    await call.message.edit_text(text, reply_markup=build_result_markup(link))
+    await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
         normalized_link = link.strip()
         if normalized_link:
-            await _qr_links.remember(call.message.chat.id, normalized_link)
+            await _qr_links.remember(message.chat.id, normalized_link)
     await call.answer("Ключ выдан")
 
 
@@ -809,8 +842,11 @@ async def handle_my_keys(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     keys = await fetch_keys(username)
     if not keys:
@@ -825,8 +861,8 @@ async def handle_my_keys(call: CallbackQuery) -> None:
             if key.get("link"):
                 parts.append(f"<code>{key['link']}</code>")
         text = "\n".join(parts)
-    reply_markup = build_payment_keyboard(username, call.message.chat.id, username)
-    await call.message.edit_text(text, reply_markup=reply_markup)
+    reply_markup = build_payment_keyboard(username, message.chat.id, username)
+    await edit_message_text_safe(message, text, reply_markup=reply_markup)
     await call.answer()
 
 
@@ -836,14 +872,17 @@ async def handle_pay(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     text = (
         "Выбери тариф. Мы создадим счёт автоматически и отправим безопасную ссылку на оплату."
     )
-    keyboard = build_payment_keyboard(username, call.message.chat.id, username)
-    await call.message.edit_text(text, reply_markup=keyboard)
+    keyboard = build_payment_keyboard(username, message.chat.id, username)
+    await edit_message_text_safe(message, text, reply_markup=keyboard)
     await call.answer()
 
 
@@ -859,10 +898,11 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
         await call.answer("Неизвестный тариф", show_alert=True)
         return
 
-    chat_id = call.message.chat.id if call.message else None
+    message = call.message
+    chat_id = message.chat.id if message else None
     username = user.username or f"id_{user.id}"
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    if message:
+        await _delete_previous_qr(message.chat.id)
 
     await register_user(username, chat_id, user.username)
 
@@ -886,8 +926,8 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
     text = "\n".join(text_parts)
     markup = build_payment_result_keyboard(payment_url)
 
-    if call.message:
-        await call.message.edit_text(text, reply_markup=markup)
+    if message:
+        await edit_message_text_safe(message, text, reply_markup=markup)
     await call.answer()
 
 
@@ -897,8 +937,11 @@ async def handle_referrals(call: CallbackQuery) -> None:
     if user is None:
         await call.answer()
         return
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     stats = await fetch_referral_stats(username)
     ref_link = f"https://t.me/{BOT_USERNAME}?start={username}" if BOT_USERNAME else ""
@@ -908,28 +951,30 @@ async def handle_referrals(call: CallbackQuery) -> None:
         f"Твой прогресс: {stats.get('total_referrals', 0)} приглашений, {stats.get('total_days', 0)} бонусных дней.\n"
         f"Ссылка: {ref_link or 'поделись своим @username'}"
     )
-    await call.message.edit_text(text, reply_markup=build_back_menu())
+    await edit_message_text_safe(message, text, reply_markup=build_back_menu())
     await call.answer()
 
 
 @dp.callback_query(F.data == MENU_HELP)
 async def handle_help(call: CallbackQuery) -> None:
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
-    await call.message.edit_text(
-        build_help_text(), reply_markup=build_back_menu(include_help=False)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
+    await edit_message_text_safe(
+        message, build_help_text(), reply_markup=build_back_menu(include_help=False)
     )
     await call.answer()
 
 
 @dp.callback_query(F.data == MENU_AI)
 async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
     message = call.message
     if message is None:
         await call.answer()
         return
+    await _delete_previous_qr(message.chat.id)
 
     chat_id = message.chat.id
     _get_history(chat_id).clear()
@@ -943,16 +988,21 @@ async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
     )
     first_question = questions[0] if questions else DEFAULT_AI_QUESTIONS[0]
     intro_text = "🧠 Давай подберём оптимальный сценарий.\n\n" + first_question
-    await message.edit_text(intro_text, reply_markup=keyboard)
+    await edit_message_text_safe(message, intro_text, reply_markup=keyboard)
     await call.answer()
 
 
 @dp.callback_query(F.data == CANCEL_AI)
 async def handle_ai_cancel(call: CallbackQuery, state: FSMContext) -> None:
-    if call.message:
-        await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
     await state.clear()
-    await call.message.edit_text("Ок! Возвращаемся в меню.", reply_markup=build_main_menu())
+    await edit_message_text_safe(
+        message, "Ок! Возвращаемся в меню.", reply_markup=build_main_menu()
+    )
     await call.answer()
 
 
