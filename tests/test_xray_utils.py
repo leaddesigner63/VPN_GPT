@@ -173,3 +173,78 @@ def test_restart_falls_back_to_alternative_names(monkeypatch):
         ["systemctl", "restart", "xray.service"],
         ["systemctl", "restart", "xray"],
     ]
+
+
+def test_remove_client_handles_multiple_vless_inbounds(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "inbounds": [
+                    {
+                        "protocol": "dokodemo-door",
+                        "settings": {},
+                    },
+                    {
+                        "protocol": "vless",
+                        "settings": {
+                            "clients": [
+                                {"id": "shared", "email": "user", "level": 0},
+                                {"id": "other", "email": "other", "level": 0},
+                            ]
+                        },
+                    },
+                    {
+                        "protocol": "VLESS",
+                        "settings": {
+                            "clients": [
+                                {"id": "shared", "email": "mirror", "level": 0},
+                                {"id": "keep", "email": "keep", "level": 0},
+                            ]
+                        },
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    xray, restarts = _reload_xray(monkeypatch, config_path)
+
+    removed = xray.remove_client("shared")
+
+    assert removed is True
+    assert len(restarts) == 1
+
+    config = _load_config(config_path)
+    clients_lists = [
+        inbound.get("settings", {}).get("clients", [])
+        for inbound in config["inbounds"]
+        if inbound.get("protocol") and str(inbound["protocol"]).lower() == "vless"
+    ]
+
+    assert clients_lists == [
+        [{"id": "other", "email": "other", "level": 0}],
+        [{"id": "keep", "email": "keep", "level": 0}],
+    ]
+
+
+def test_remove_client_missing_entry(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        [
+            {"id": "first", "level": 0, "email": "alice"},
+            {"id": "second", "level": 0, "email": "bob"},
+        ],
+    )
+
+    xray, restarts = _reload_xray(monkeypatch, config_path)
+
+    removed = xray.remove_client("missing")
+
+    assert removed is False
+    assert restarts == []
+
+    clients = _load_config(config_path)["inbounds"][0]["settings"]["clients"]
+    assert {client["id"] for client in clients} == {"first", "second"}
