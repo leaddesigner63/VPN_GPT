@@ -25,6 +25,49 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
+def _get_trial_days() -> int:
+    raw = os.getenv("TRIAL_DAYS")
+    if raw is None:
+        return 0
+
+    cleaned = raw.strip()
+    if not cleaned:
+        return 0
+
+    try:
+        return int(cleaned)
+    except ValueError:
+        logger.warning("Invalid TRIAL_DAYS value", extra={"value": raw})
+        return 0
+
+
+def _format_days(days: int) -> str:
+    remainder = abs(days) % 100
+    if 11 <= remainder <= 14:
+        suffix = "дней"
+    else:
+        last_digit = abs(days) % 10
+        if last_digit == 1:
+            suffix = "день"
+        elif 2 <= last_digit <= 4:
+            suffix = "дня"
+        else:
+            suffix = "дней"
+    return f"{days} {suffix}"
+
+
+def _build_trial_message(days: int) -> str:
+    if days > 0:
+        return (
+            "Сейчас тестовый период — ключи выдаются бесплатно на "
+            f"{_format_days(days)}."
+        )
+    return "Сейчас тестовый период — ключи выдаются бесплатно."
+
+
+TRIAL_DAYS = _get_trial_days()
+
+
 class _QrMessageTracker:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -243,8 +286,10 @@ async def request_key_info(username: str, chat_id: int | None = None) -> dict:
 @dp.message(Command("start"))
 async def start(msg: Message):
     await _delete_previous_qr(msg.chat.id)
+    trial_message = _build_trial_message(TRIAL_DAYS)
     await msg.answer(
-        "👋 Привет! Я бот VPN_GPT. Сейчас тестовый период — ключи выдаются бесплатно.\n"
+        "👋 Привет! Я бот VPN_GPT. "
+        f"{trial_message}\n"
         "\nВыбери действие в меню ниже, и я всё сделаю за тебя.",
         reply_markup=build_main_menu(),
     )
