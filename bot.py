@@ -340,6 +340,27 @@ DEFAULT_AI_QUESTIONS = [
 ]
 
 
+def _format_days(days: int) -> str:
+    remainder = abs(days) % 100
+    if 11 <= remainder <= 14:
+        suffix = "дней"
+    else:
+        last_digit = abs(days) % 10
+        if last_digit == 1:
+            suffix = "день"
+        elif 2 <= last_digit <= 4:
+            suffix = "дня"
+        else:
+            suffix = "дней"
+    return f"{days} {suffix}"
+
+
+def _build_trial_phrase(days: int) -> str:
+    if days > 0:
+        return f"тест на {_format_days(days)}"
+    return "тест бесплатно"
+
+
 def build_ai_questions_prompt() -> str:
     return (
         "Ты помогаешь оператору VPN-сервиса. Сформируй три очень коротких вопроса "
@@ -618,9 +639,10 @@ async def handle_start(message: Message, state: FSMContext) -> None:
     await register_user(username, message.chat.id, ref)
     await bot.set_chat_menu_button(message.chat.id, MenuButtonDefault())
 
+    trial_phrase = _build_trial_phrase(TRIAL_DAYS)
     greeting = (
         "👋 Привет! Я VPN_GPT — помогу подключиться к VPN в три шага:\n"
-        "1️⃣ Получи ключ (тест на 3 дня).\n"
+        f"1️⃣ Получи ключ ({trial_phrase}).\n"
         "2️⃣ Следуй инструкции, подключи приложение.\n"
         "3️⃣ Оплати подходящий тариф — и пользуйся без ограничений."
     )
