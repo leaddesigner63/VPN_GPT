@@ -215,18 +215,21 @@ _ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
 CANCEL_AI = "ai_cancel"
 
 
-def _build_common_action_rows() -> list[list[InlineKeyboardButton]]:
-    return [
+def _build_common_action_rows(include_help: bool = True) -> list[list[InlineKeyboardButton]]:
+    action_rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(text="🚀 Быстрый старт", callback_data=MENU_QUICK),
             InlineKeyboardButton(text="🔑 Мои ключи", callback_data=MENU_KEYS),
-        ],
-        [
-            InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY),
-            InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP),
-        ],
-        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)],
+        ]
     ]
+
+    payment_row = [InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)]
+    if include_help:
+        payment_row.append(InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP))
+    action_rows.append(payment_row)
+
+    action_rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    return action_rows
 
 
 def build_main_menu() -> InlineKeyboardMarkup:
@@ -242,8 +245,8 @@ def build_main_menu() -> InlineKeyboardMarkup:
     )
 
 
-def build_back_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=_build_common_action_rows())
+def build_back_menu(include_help: bool = True) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=_build_common_action_rows(include_help))
 
 
 def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) -> InlineKeyboardMarkup:
@@ -876,7 +879,9 @@ async def handle_referrals(call: CallbackQuery) -> None:
 async def handle_help(call: CallbackQuery) -> None:
     if call.message:
         await _delete_previous_qr(call.message.chat.id)
-    await call.message.edit_text(build_help_text(), reply_markup=build_back_menu())
+    await call.message.edit_text(
+        build_help_text(), reply_markup=build_back_menu(include_help=False)
+    )
     await call.answer()
 
 
