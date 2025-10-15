@@ -17,7 +17,7 @@ from api.utils.morune_client import InvoiceCreateResult, create_invoice, verify_
 from api.utils.telegram import send_message
 from api.utils.vless import build_vless_link
 
-router = APIRouter(prefix="/api/morune", tags=["morune"])
+router = APIRouter(prefix="/morune", tags=["morune"])
 logger = get_logger("endpoints.morune")
 
 _ALLOWED_PLANS = {"1m", "3m", "1y"}
@@ -294,4 +294,21 @@ async def morune_paid(request: Request) -> WebhookResponse:
     return WebhookResponse(ok=True)
 
 
-__all__ = ["router"]
+legacy_router = APIRouter(prefix="/api/morune", tags=["morune"])
+
+
+@legacy_router.post("/create_invoice", response_model=CreateInvoiceResponse, include_in_schema=False)
+async def legacy_create_invoice_endpoint(request: CreateInvoiceRequest) -> CreateInvoiceResponse:
+    """Backward-compatible path that mirrors :func:`create_invoice_endpoint`."""
+
+    return await create_invoice_endpoint(request)
+
+
+@legacy_router.post("/paid", response_model=WebhookResponse, include_in_schema=False)
+async def legacy_morune_paid(request: Request) -> WebhookResponse:
+    """Backward-compatible path that mirrors :func:`morune_paid`."""
+
+    return await morune_paid(request)
+
+
+__all__ = ["router", "legacy_router"]
