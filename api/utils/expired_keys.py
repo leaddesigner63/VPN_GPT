@@ -4,6 +4,7 @@ import threading
 from typing import Any, Callable, Sequence
 
 from api.utils import db, xray
+from api.utils.notifications import schedule_notification_chain
 from api.utils.logging import get_logger
 
 logger = get_logger("expired_key_monitor")
@@ -22,6 +23,7 @@ class ExpiredKeyMonitor:
         fetch_expired: Callable[[], Sequence[ExpiredKeyRecord]] | None = None,
         deactivate_key: Callable[[str], None] | None = None,
         remove_client: Callable[[str], Any] | None = None,
+        schedule_notifications: Callable[[ExpiredKeyRecord], bool] | None = None,
     ) -> None:
         if interval_seconds <= 0:
             logger.warning(
@@ -34,6 +36,7 @@ class ExpiredKeyMonitor:
         self._fetch_expired = fetch_expired or db.list_expired_keys
         self._deactivate_key = deactivate_key or db.deactivate_key
         self._remove_client = remove_client or xray.remove_client
+        self._schedule_notifications = schedule_notifications or schedule_notification_chain
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -99,6 +102,14 @@ class ExpiredKeyMonitor:
             except Exception:
                 logger.exception(
                     "Failed to remove VPN client from Xray",
+                    extra={"uuid": uuid_value, "username": username},
+                )
+
+            try:
+                self._schedule_notifications(record)
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue renewal notifications",
                     extra={"uuid": uuid_value, "username": username},
                 )
 

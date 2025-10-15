@@ -20,6 +20,10 @@ logger = get_logger("db")
 MIGRATION_ERROR: tuple[Path, Exception] | None = None
 T = TypeVar("T")
 
+RENEWAL_NOTIFICATION_STAGE_COUNT = 3
+_DEFAULT_NOTIFICATION_INTERVAL_HOURS = 24.0
+_DEFAULT_NOTIFICATION_RETRY_HOURS = 1.0
+
 
 def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
@@ -137,6 +141,21 @@ CREATE TABLE IF NOT EXISTS payments (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS renewal_notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key_uuid TEXT NOT NULL UNIQUE,
+  username TEXT,
+  chat_id INTEGER,
+  expires_at TEXT,
+  stage INTEGER NOT NULL DEFAULT 0,
+  last_sent_at TEXT,
+  next_attempt_at TEXT NOT NULL,
+  completed INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS referrals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   referrer TEXT NOT NULL,
@@ -155,6 +174,7 @@ INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_payments_username ON payments(username)",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
     "CREATE INDEX IF NOT EXISTS idx_payments_provider_payment_id ON payments(provider_payment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_renewal_notifications_next_attempt ON renewal_notifications(next_attempt_at)",
 )
 
 
@@ -794,6 +814,214 @@ def list_expired_keys() -> list[dict]:
     return expired
 
 
+def schedule_renewal_notification(
+    key_uuid: str,
+    *,
+    chat_id: int | None,
+    username: str | None,
+    expires_at: str | None,
+) -> bool:
+    if not key_uuid:
+        raise ValueError("key_uuid is required")
+    if chat_id is None:
+        logger.info(
+            "Skipping renewal notification scheduling due to missing chat_id",
+            extra={"uuid": key_uuid},
+        )
+        return False
+
+    now = _utcnow().isoformat()
+    normalized_username = normalise_username(username) if username else None
+
+    def _operation() -> int:
+        with connect() as con:
+            cursor = con.execute(
+                """
+                INSERT OR IGNORE INTO renewal_notifications (
+                    key_uuid,
+                    username,
+                    chat_id,
+                    expires_at,
+                    stage,
+                    last_sent_at,
+                    next_attempt_at,
+                    completed,
+                    last_error,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, 0, NULL, ?, 0, NULL, ?, ?)
+                """,
+                (
+                    key_uuid,
+                    normalized_username,
+                    chat_id,
+                    expires_at,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            return cursor.rowcount
+
+    inserted = _run_with_schema_retry(_operation)
+    if inserted:
+        logger.info(
+            "Scheduled renewal notification chain",
+            extra={"uuid": key_uuid, "chat_id": chat_id},
+        )
+    else:
+        logger.debug(
+            "Renewal notification chain already exists",
+            extra={"uuid": key_uuid, "chat_id": chat_id},
+        )
+    return bool(inserted)
+
+
+def list_due_renewal_notifications(*, limit: int | None = None) -> list[dict]:
+    cutoff = _utcnow().isoformat()
+
+    def _operation() -> Sequence[sqlite3.Row]:
+        with connect() as con:
+            query = """
+                SELECT id, key_uuid, username, chat_id, expires_at, stage,
+                       last_sent_at, next_attempt_at, completed, last_error
+                FROM renewal_notifications
+                WHERE completed=0 AND next_attempt_at <= ?
+                ORDER BY next_attempt_at ASC
+            """
+            params: tuple[Any, ...]
+            if limit is not None and limit > 0:
+                query += " LIMIT ?"
+                params = (cutoff, int(limit))
+            else:
+                params = (cutoff,)
+            cur = con.execute(query, params)
+            return cur.fetchall()
+
+    rows = _run_with_schema_retry(_operation)
+    return [_row_to_dict(row) for row in rows]
+
+
+def mark_notification_sent(
+    notification_id: int,
+    *,
+    has_more: bool,
+    interval_hours: float = _DEFAULT_NOTIFICATION_INTERVAL_HOURS,
+) -> None:
+    now = _utcnow()
+    next_attempt = now + timedelta(hours=interval_hours) if has_more else now
+    completed = 0 if has_more else 1
+
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                UPDATE renewal_notifications
+                SET stage = stage + 1,
+                    last_sent_at = ?,
+                    next_attempt_at = ?,
+                    completed = ?,
+                    updated_at = ?,
+                    last_error = NULL
+                WHERE id=?
+                """,
+                (
+                    now.isoformat(),
+                    next_attempt.isoformat(),
+                    completed,
+                    now.isoformat(),
+                    notification_id,
+                ),
+            )
+
+    _run_with_schema_retry(_operation)
+
+
+def mark_notification_failed(
+    notification_id: int,
+    error: str,
+    *,
+    retry_hours: float = _DEFAULT_NOTIFICATION_RETRY_HOURS,
+) -> None:
+    now = _utcnow()
+    next_attempt = now + timedelta(hours=retry_hours)
+    message = (error or "").strip()
+    if len(message) > 500:
+        message = message[:500]
+
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                UPDATE renewal_notifications
+                SET last_error = ?,
+                    next_attempt_at = ?,
+                    updated_at = ?
+                WHERE id=?
+                """,
+                (
+                    message,
+                    next_attempt.isoformat(),
+                    now.isoformat(),
+                    notification_id,
+                ),
+            )
+
+    _run_with_schema_retry(_operation)
+
+
+def complete_renewal_notification(notification_id: int) -> None:
+    now = _utcnow()
+
+    def _operation() -> None:
+        with connect() as con:
+            con.execute(
+                """
+                UPDATE renewal_notifications
+                SET completed = 1,
+                    stage = CASE
+                        WHEN stage < ? THEN ?
+                        ELSE stage
+                    END,
+                    next_attempt_at = ?,
+                    updated_at = ?,
+                    last_error = NULL
+                WHERE id=?
+                """,
+                (
+                    RENEWAL_NOTIFICATION_STAGE_COUNT,
+                    RENEWAL_NOTIFICATION_STAGE_COUNT,
+                    now.isoformat(),
+                    now.isoformat(),
+                    notification_id,
+                ),
+            )
+
+    _run_with_schema_retry(_operation)
+
+
+def get_renewal_notification(key_uuid: str) -> dict | None:
+    if not key_uuid:
+        raise ValueError("key_uuid is required")
+
+    def _operation() -> sqlite3.Row | None:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT id, key_uuid, username, chat_id, expires_at, stage,
+                       last_sent_at, next_attempt_at, completed, last_error
+                FROM renewal_notifications
+                WHERE key_uuid=?
+                """,
+                (key_uuid,),
+            )
+            return cur.fetchone()
+
+    row = _run_with_schema_retry(_operation)
+    return _row_to_dict(row)
+
+
 def referral_bonus_exists(referrer: str, referee: str) -> bool:
     def _operation() -> bool:
         with connect() as con:
@@ -991,6 +1219,32 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
                     con.execute("ALTER TABLE payments ADD COLUMN metadata TEXT")
 
                 _apply_indexes(con)
+
+            if not _table_exists(con, "renewal_notifications"):
+                logger.warning(
+                    "Creating missing 'renewal_notifications' table", extra={"path": str(resolved)}
+                )
+                con.execute(
+                    """
+                    CREATE TABLE renewal_notifications (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      key_uuid TEXT NOT NULL UNIQUE,
+                      username TEXT,
+                      chat_id INTEGER,
+                      expires_at TEXT,
+                      stage INTEGER NOT NULL DEFAULT 0,
+                      last_sent_at TEXT,
+                      next_attempt_at TEXT NOT NULL,
+                      completed INTEGER NOT NULL DEFAULT 0,
+                      last_error TEXT,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_renewal_notifications_next_attempt ON renewal_notifications(next_attempt_at)"
+                )
     except Exception as exc:  # pragma: no cover - defensive
         MIGRATION_ERROR = (resolved, exc)
         logger.exception("Failed to apply database migrations", extra={"path": str(resolved)})
@@ -1020,6 +1274,12 @@ __all__ = [
     "log_referral_bonus",
     "list_expiring_keys",
     "list_expired_keys",
+    "schedule_renewal_notification",
+    "list_due_renewal_notifications",
+    "mark_notification_sent",
+    "mark_notification_failed",
+    "complete_renewal_notification",
+    "get_renewal_notification",
     "referral_bonus_exists",
     "get_referral_stats",
     "extend_active_key",

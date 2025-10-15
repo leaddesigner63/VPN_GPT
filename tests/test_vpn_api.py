@@ -45,6 +45,7 @@ def configured_env(tmp_path, monkeypatch) -> EnvConfig:
     monkeypatch.setenv("ENV_PATH", str(env_path))
     monkeypatch.setenv("DATABASE", str(db_path))
     monkeypatch.setenv("BOT_TOKEN", "test-token")
+    monkeypatch.setenv("GPT_API_KEY", "test-key")
 
     import api.config as config_module
     import importlib

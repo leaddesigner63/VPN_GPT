@@ -64,4 +64,8 @@ def test_expired_key_monitor_deactivates_and_syncs(tmp_path, monkeypatch):
     assert all(client.get("id") != expired_uuid for client in clients)
     assert any(client.get("id") == active_uuid for client in clients)
 
+    due_notifications = db_module.list_due_renewal_notifications()
+    assert due_notifications
+    assert due_notifications[0]["key_uuid"] == expired_uuid
+
     assert monitor.run_once() == 0

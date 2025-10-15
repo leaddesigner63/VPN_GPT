@@ -12,7 +12,11 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from api.utils.logging import configure_logging, get_logger
-from api.config import BOT_PAYMENT_URL, EXPIRED_KEY_POLL_SECONDS
+from api.config import (
+    BOT_PAYMENT_URL,
+    EXPIRED_KEY_POLL_SECONDS,
+    RENEWAL_NOTIFICATION_POLL_SECONDS,
+)
 
 # === Initialization ===
 load_dotenv()
@@ -49,9 +53,13 @@ if origins:
 from api.endpoints import admin, notify, payments, referrals, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
 from api.utils.expired_keys import ExpiredKeyMonitor  # noqa: E402
+from api.utils.notifications import RenewalNotificationScheduler  # noqa: E402
 
 
 expired_key_monitor = ExpiredKeyMonitor(interval_seconds=EXPIRED_KEY_POLL_SECONDS)
+renewal_notification_scheduler = RenewalNotificationScheduler(
+    interval_seconds=RENEWAL_NOTIFICATION_POLL_SECONDS
+)
 
 
 @app.on_event("startup")
@@ -62,6 +70,7 @@ def ensure_database() -> None:
     db.auto_update_missing_fields()
     logger.info("Database initialisation complete")
     expired_key_monitor.start()
+    renewal_notification_scheduler.start()
 
 
 # === Router registration ===
@@ -79,6 +88,8 @@ def stop_background_tasks() -> None:
 
     logger.info("Stopping expired key monitor")
     expired_key_monitor.stop()
+    logger.info("Stopping renewal notification scheduler")
+    renewal_notification_scheduler.stop()
 
 
 # === Health check ===
