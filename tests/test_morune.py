@@ -21,7 +21,7 @@ _MODULE_SPEC.loader.exec_module(morune)
 @pytest.fixture()
 def morune_client():
     client = morune.MoruneClient(
-        base_url="https://payments.example", api_key="token", project_id="proj"
+        base_url="https://payments.example", api_key="token", shop_id="proj"
     )
     yield client
     client.close()
@@ -200,41 +200,22 @@ def test_create_invoice_handles_html_links(monkeypatch, morune_client):
     assert invoice.currency == "RUB"
 
 
-def test_create_invoice_fetches_details_when_missing_url(monkeypatch, morune_client):
-    responses = iter(
-        [
-            {
-                "data": {
-                    "id": "inv-006",
-                    "attributes": {
-                        "status": "pending",
-                        "amount": 300,
-                        "currency": "usd",
-                    },
-                }
-            },
-            {
-                "data": {
-                    "attributes": {
-                        "paymentLink": "https://pay.example/from-detail",
-                        "status": "waiting_payment",
-                        "amount": 305,
-                        "currency": "eur",
-                    }
-                }
-            },
-        ]
-    )
-
+def test_create_invoice_handles_missing_url(monkeypatch, morune_client):
     def fake_request(method, path, *, json_payload=None):
-        payload = next(responses)
-        if method == "GET":
-            assert path == "/e/api/invoices/inv-006"
-            assert json_payload is None
-        else:
-            assert method == "POST"
-            assert path == "/e/api/invoices"
-        return payload
+        assert method == "POST"
+        assert path == "/invoice/create"
+        assert json_payload is not None
+        assert json_payload["shop_id"] == "proj"
+        return {
+            "data": {
+                "id": "inv-006",
+                "attributes": {
+                    "status": "pending",
+                    "amount": 300,
+                    "currency": "usd",
+                },
+            }
+        }
 
     monkeypatch.setattr(morune_client, "_request", fake_request)
 
@@ -249,9 +230,8 @@ def test_create_invoice_fetches_details_when_missing_url(monkeypatch, morune_cli
     )
 
     assert invoice.provider_payment_id == "inv-006"
-    assert invoice.payment_url == "https://pay.example/from-detail"
-    assert invoice.status == "waiting_payment"
-    assert invoice.amount == 305
-    assert invoice.currency == "EUR"
-    assert invoice.raw["create"]["data"]["id"] == "inv-006"
-    assert invoice.raw["detail"]["data"]["attributes"]["paymentLink"] == "https://pay.example/from-detail"
+    assert invoice.payment_url is None
+    assert invoice.status == "pending"
+    assert invoice.amount == 300
+    assert invoice.currency == "USD"
+    assert invoice.raw["data"]["id"] == "inv-006"

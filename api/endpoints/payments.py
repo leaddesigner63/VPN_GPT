@@ -13,7 +13,7 @@ from api.config import (
     MORUNE_BASE_URL,
     MORUNE_DEFAULT_CURRENCY,
     MORUNE_FAIL_URL,
-    MORUNE_PROJECT_ID,
+    MORUNE_SHOP_ID,
     MORUNE_SUCCESS_URL,
     MORUNE_WEBHOOK_SECRET,
     PAYMENTS_DEFAULT_SOURCE,
@@ -43,13 +43,13 @@ def _get_morune_client() -> MoruneClient | None:
     global _MORUNE_CLIENT
     if _MORUNE_CLIENT is not None:
         return _MORUNE_CLIENT
-    if not (MORUNE_API_KEY and MORUNE_PROJECT_ID):
+    if not (MORUNE_API_KEY and MORUNE_SHOP_ID):
         return None
     try:
         _MORUNE_CLIENT = MoruneClient(
             base_url=MORUNE_BASE_URL,
             api_key=MORUNE_API_KEY,
-            project_id=MORUNE_PROJECT_ID,
+            shop_id=MORUNE_SHOP_ID,
             webhook_secret=MORUNE_WEBHOOK_SECRET,
         )
         logger.info("Morune client initialised", extra={"base_url": MORUNE_BASE_URL})
@@ -480,6 +480,7 @@ async def morune_webhook(request: Request):
         request.headers.get("X-Signature")
         or request.headers.get("X-Morune-Signature")
         or request.headers.get("X-Webhook-Signature")
+        or request.headers.get("X-Api-Sha256-Signature")
     )
 
     try:
