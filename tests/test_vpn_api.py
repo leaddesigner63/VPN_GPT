@@ -195,6 +195,22 @@ def test_payment_confirmation_extends_subscription(api_app, configured_env):
     assert keys[0]["trial"] == 0
 
 
+def test_create_payment_rejects_invalid_referrer(api_app, configured_env):
+    response = api_app.post(
+        "/payments/create",
+        json={
+            "username": "mallory",
+            "plan": "1m",
+            "chat_id": 99,
+            "referrer": "   ",
+        },
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid_referrer"
+
+
 def test_issue_key_returns_503_when_service_token_missing(tmp_path, monkeypatch):
     db_path = tmp_path / "token-missing.db"
     env_path = tmp_path / ".env"

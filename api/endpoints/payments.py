@@ -246,6 +246,13 @@ def _create_payment_internal(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_username")
 
+    normalized_referrer: str | None = None
+    if referrer is not None:
+        try:
+            normalized_referrer = db.normalise_username(referrer)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid_referrer")
+
     try:
         amount = _resolve_amount(plan, amount_override)
     except KeyError:
@@ -259,7 +266,7 @@ def _create_payment_internal(
         plan=plan,
         source=source,
         chat_id=chat_id,
-        referrer=referrer,
+        referrer=normalized_referrer,
         metadata=metadata,
     )
 
@@ -311,7 +318,7 @@ def _create_payment_internal(
         payment_url=payment_url,
         external_status=provider_status,
         raw_provider_payload=raw_payload,
-        referrer=referrer,
+        referrer=normalized_referrer,
         source=source,
         metadata=metadata_payload,
     )
