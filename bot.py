@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from collections import defaultdict, deque
@@ -169,8 +170,8 @@ async def _delete_previous_qr(chat_id: int) -> None:
 
 class AiFlow(StatesGroup):
     device = State()
-    goal = State()
-    priority = State()
+    region = State()
+    preferences = State()
 
 
 ConversationHistory = Deque[dict[str, str]]
@@ -330,6 +331,68 @@ async def ask_gpt(chat_id: int, user_text: str) -> str:
     reply = completion.choices[0].message.content or ""
     _remember_exchange(chat_id, user_text, reply)
     return reply
+
+
+DEFAULT_AI_QUESTIONS = [
+    "Какое устройство подключаем к VPN?",
+    "Где чаще всего будет нужен VPN? Оптимизируем под местных провайдеров.",
+    "Есть ли особые пожелания по использованию VPN?",
+]
+
+
+def build_ai_questions_prompt() -> str:
+    return (
+        "Ты помогаешь оператору VPN-сервиса. Сформируй три очень коротких вопроса "
+        "для пользователя. Структура строго такая: 1) выясни тип или модель "
+        "устройства пользователя; 2) уточни регион основного использования VPN, "
+        "упомяни, что оптимизируешь рекомендации под местных провайдеров и особенности GEO; "
+        "3) спроси об особых пожеланиях по применению VPN. Каждый вопрос до 90 символов. "
+        "Ответ верни в JSON без комментариев и дополнительного текста: "
+        '{"questions": ["вопрос1", "вопрос2", "вопрос3"]}. '
+        "Используй дружелюбный тон без эмодзи."
+    )
+
+
+def _parse_ai_questions(raw: str) -> list[str]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    questions = payload.get("questions")
+    if not isinstance(questions, list):
+        return []
+
+    parsed: list[str] = []
+    for item in questions:
+        if isinstance(item, str):
+            cleaned = item.strip()
+            if cleaned:
+                parsed.append(cleaned)
+        if len(parsed) == 3:
+            break
+    return parsed
+
+
+async def generate_ai_questions(chat_id: int) -> list[str]:
+    response = await ask_gpt(chat_id, build_ai_questions_prompt())
+    questions = _parse_ai_questions(response)
+    if len(questions) == 3:
+        return questions
+    return DEFAULT_AI_QUESTIONS
+
+
+def _extract_ai_questions(data: dict[str, Any]) -> list[str]:
+    raw_questions = data.get("ai_questions")
+    if isinstance(raw_questions, list):
+        cleaned = [
+            item.strip()
+            for item in raw_questions
+            if isinstance(item, str) and item.strip()
+        ]
+        if len(cleaned) >= 3:
+            return cleaned[:3]
+    return DEFAULT_AI_QUESTIONS
 
 
 async def _request_with_retry(
@@ -505,13 +568,15 @@ def format_key_message(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def build_ai_instruction_prompt(device: str, goal: str, priority: str, trial_days: int, plans: Dict[str, int]) -> str:
+def build_ai_instruction_prompt(
+    device: str, region: str, preferences: str, trial_days: int, plans: Dict[str, int]
+) -> str:
     plan_parts = [f"{code.upper()} — {price} ₽" for code, price in plans.items()]
     return (
         "Ты помогаешь пользователю настроить VPN. Сформируй короткую памятку из 3-4 пунктов: "
         "1) какую программу установить под устройство, 2) как импортировать ссылку VLESS, 3) как оплатить тариф. "
         "Пиши дружелюбно, без жаргона, используй эмодзи экономно.\n"
-        f"Устройство: {device}.\nЦель: {goal}.\nПриоритет: {priority}.\n"
+        f"Устройство: {device}.\nРегион использования: {region}.\nОсобые пожелания: {preferences}.\n"
         f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}."
     )
 
@@ -744,14 +809,24 @@ async def handle_help(call: CallbackQuery) -> None:
 async def handle_ai_start(call: CallbackQuery, state: FSMContext) -> None:
     if call.message:
         await _delete_previous_qr(call.message.chat.id)
+    message = call.message
+    if message is None:
+        await call.answer()
+        return
+
+    chat_id = message.chat.id
+    _get_history(chat_id).clear()
+    questions = await generate_ai_questions(chat_id)
+    _get_history(chat_id).clear()
+
     await state.set_state(AiFlow.device)
+    await state.update_data(ai_questions=questions)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
     )
-    await call.message.edit_text(
-        "🧠 Давай подберём оптимальный сценарий. Какое устройство хочешь подключить?",
-        reply_markup=keyboard,
-    )
+    first_question = questions[0] if questions else DEFAULT_AI_QUESTIONS[0]
+    intro_text = "🧠 Давай подберём оптимальный сценарий.\n\n" + first_question
+    await message.edit_text(intro_text, reply_markup=keyboard)
     await call.answer()
 
 
@@ -767,32 +842,40 @@ async def handle_ai_cancel(call: CallbackQuery, state: FSMContext) -> None:
 @dp.message(AiFlow.device)
 async def process_ai_device(message: Message, state: FSMContext) -> None:
     await _delete_previous_qr(message.chat.id)
-    await state.update_data(device=message.text.strip())
+    user_device = message.text.strip()
+    await state.update_data(device=user_device)
+    data = await state.get_data()
+    questions = _extract_ai_questions(data)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
     )
-    await message.answer("Отлично! Для чего нужен VPN (стриминг, соцсети, безопасность)?", reply_markup=keyboard)
-    await state.set_state(AiFlow.goal)
+    next_question = questions[1]
+    await message.answer(next_question, reply_markup=keyboard)
+    await state.set_state(AiFlow.region)
 
 
-@dp.message(AiFlow.goal)
-async def process_ai_goal(message: Message, state: FSMContext) -> None:
+@dp.message(AiFlow.region)
+async def process_ai_region(message: Message, state: FSMContext) -> None:
     await _delete_previous_qr(message.chat.id)
-    await state.update_data(goal=message.text.strip())
+    region = message.text.strip()
+    await state.update_data(region=region)
+    data = await state.get_data()
+    questions = _extract_ai_questions(data)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
     )
-    await message.answer("Что важнее всего: скорость, стабильность или обход блокировок?", reply_markup=keyboard)
-    await state.set_state(AiFlow.priority)
+    next_question = questions[2]
+    await message.answer(next_question, reply_markup=keyboard)
+    await state.set_state(AiFlow.preferences)
 
 
-@dp.message(AiFlow.priority)
-async def process_ai_priority(message: Message, state: FSMContext) -> None:
+@dp.message(AiFlow.preferences)
+async def process_ai_preferences(message: Message, state: FSMContext) -> None:
     await _delete_previous_qr(message.chat.id)
     data = await state.get_data()
     device = data.get("device", "устройство не указано")
-    goal = data.get("goal", "цель не указана")
-    priority = message.text.strip()
+    region = data.get("region", "регион не указан")
+    preferences = message.text.strip() or "не указаны"
     await state.clear()
 
     user = message.from_user
@@ -807,7 +890,7 @@ async def process_ai_priority(message: Message, state: FSMContext) -> None:
 
     link = trial_payload.get("link") if trial_payload else None
 
-    prompt = build_ai_instruction_prompt(device, goal, priority, TRIAL_DAYS, PLANS)
+    prompt = build_ai_instruction_prompt(device, region, preferences, TRIAL_DAYS, PLANS)
     ai_message = await ask_gpt(message.chat.id, prompt)
 
     response_parts = ["🧠 <b>Твой персональный план</b>", ai_message.strip()]
