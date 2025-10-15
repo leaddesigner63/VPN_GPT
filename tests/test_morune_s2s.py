@@ -81,9 +81,14 @@ def _read_table(db_path: Path, table: str) -> list[dict[str, Any]]:
 
 
 def _sign(payload: dict[str, Any]) -> tuple[str, bytes]:
-    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    digest = hmac.new(b"hook-secret", raw, hashlib.sha256).hexdigest()
-    return digest, raw
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ": "),
+        sort_keys=True,
+    ).encode("utf-8")
+    digest = hmac.new(b"hook-secret", canonical, hashlib.sha256).hexdigest()
+    return digest, canonical
 
 
 def test_create_invoice_endpoint_returns_url(monkeypatch, morune_app: MoruneTestEnv) -> None:

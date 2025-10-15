@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import decimal
+import json
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -14,6 +15,7 @@ from api.config import (
     DEFAULT_COUNTRY,
     MORUNE_DEFAULT_CURRENCY,
     MORUNE_FAIL_URL,
+    MORUNE_HOOK_URL,
     MORUNE_SUCCESS_URL,
     PAYMENTS_DEFAULT_SOURCE,
     PAYMENTS_PUBLIC_TOKEN,
@@ -306,14 +308,25 @@ def _create_payment_internal(
     client = _get_morune_client()
     if client:
         try:
+            custom_fields = json.dumps(
+                {
+                    "plan": plan,
+                    "username": normalized_username,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
             invoice = client.create_invoice(
                 payment_id=payment_id,
                 amount=amount,
                 currency=resolved_currency,
-                description=f"VPN_GPT {plan} для {normalized_username}",
-                metadata=metadata_payload,
+                comment=f"VPN_GPT {plan}",
                 success_url=MORUNE_SUCCESS_URL,
                 fail_url=MORUNE_FAIL_URL,
+                hook_url=MORUNE_HOOK_URL,
+                include_service=None,
+                expire=300,
+                custom_fields=custom_fields,
             )
         except MoruneAPIError as exc:
             logger.exception("Failed to create Morune invoice", extra={"payment_id": payment_id})
