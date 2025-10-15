@@ -211,7 +211,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Быстрый старт", callback_data=MENU_QUICK)],
-            [InlineKeyboardButton(text="🧠 Подобрать с «ИИ»", callback_data=MENU_AI)],
+            [InlineKeyboardButton(text="🧠 Подобрать с ИИ", callback_data=MENU_AI)],
             [InlineKeyboardButton(text="🔑 Мои ключи", callback_data=MENU_KEYS)],
             [InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)],
             [InlineKeyboardButton(text="🤝 Рефералы", callback_data=MENU_REF)],
