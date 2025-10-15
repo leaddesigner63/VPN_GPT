@@ -231,11 +231,12 @@ class _QrCleanupMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         finally:
-            await _delete_previous_qr(chat_id)
+            await _delete_previous_qr(chat_id, forget_link=False)
 
 
-async def _delete_previous_qr(chat_id: int) -> None:
-    await _qr_links.forget(chat_id)
+async def _delete_previous_qr(chat_id: int, *, forget_link: bool = True) -> None:
+    if forget_link:
+        await _qr_links.forget(chat_id)
     message_id = await _qr_messages.pop(chat_id)
     if message_id is None:
         return
