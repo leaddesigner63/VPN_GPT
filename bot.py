@@ -5,7 +5,7 @@ import logging
 import os
 from collections import defaultdict, deque
 from typing import Any, Deque, Dict
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from aiogram import Bot, Dispatcher, F
@@ -188,7 +188,22 @@ MENU_REF = "menu_ref"
 MENU_HELP = "menu_help"
 MENU_BACK = "menu_back"
 PAY_PLAN_PREFIX = "pay_plan:"
+_ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
 CANCEL_AI = "ai_cancel"
+
+
+def _build_common_action_rows() -> list[list[InlineKeyboardButton]]:
+    return [
+        [
+            InlineKeyboardButton(text="🚀 Быстрый старт", callback_data=MENU_QUICK),
+            InlineKeyboardButton(text="🔑 Мои ключи", callback_data=MENU_KEYS),
+        ],
+        [
+            InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY),
+            InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP),
+        ],
+        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)],
+    ]
 
 
 def build_main_menu() -> InlineKeyboardMarkup:
@@ -205,9 +220,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
 
 
 def build_back_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)]]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=_build_common_action_rows())
 
 
 def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) -> InlineKeyboardMarkup:
@@ -260,14 +273,31 @@ def build_payment_page_url(
 def _is_supported_button_link(link: str) -> bool:
     if not link:
         return False
-    return link.startswith("http") or link.startswith("tg://")
+
+    try:
+        parsed = urlparse(link)
+    except ValueError:
+        return False
+
+    if parsed.scheme not in _ALLOWED_BUTTON_SCHEMES:
+        return False
+
+    if parsed.scheme in {"http", "https"}:
+        return bool(parsed.netloc)
+
+    if parsed.scheme == "tg":
+        return bool(parsed.path or parsed.netloc or parsed.query)
+
+    return False
 
 
 def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
-    if link and _is_supported_button_link(link):
-        buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=link)])
-    buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    if link:
+        normalized_link = link.strip()
+        if normalized_link and _is_supported_button_link(normalized_link):
+            buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)])
+    buttons.extend(_build_common_action_rows())
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

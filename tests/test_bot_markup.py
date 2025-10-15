@@ -63,3 +63,17 @@ def test_build_result_markup_adds_button_for_supported_link():
 
     assert link_buttons
     assert link_buttons[0].url == url
+
+
+def test_build_result_markup_contains_action_buttons():
+    markup = build_result_markup()
+
+    callback_data = {
+        button.callback_data
+        for row in markup.inline_keyboard
+        for button in row
+        if isinstance(button, InlineKeyboardButton) and button.callback_data
+    }
+
+    expected_actions = {"menu_quick", "menu_keys", "menu_pay", "menu_help", "menu_back"}
+    assert expected_actions.issubset(callback_data)
