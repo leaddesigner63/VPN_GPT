@@ -90,7 +90,7 @@ VLESS_HOST = require_env("VLESS_HOST")
 VLESS_PORT = _parse_int("VLESS_PORT", 2053)
 BOT_PAYMENT_URL = require_env("BOT_PAYMENT_URL").rstrip("/")
 TRIAL_DAYS = _parse_int("TRIAL_DAYS", 0)
-PLANS = _parse_plans(os.getenv("PLANS", "1m:180,3m:460,12m:1450"))
+PLANS = _parse_plans(os.getenv("PLANS", "1m:180,3m:460,1y:1450"))
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", ADMIN_TOKEN)
 REFERRAL_BONUS_DAYS = _parse_int("REFERRAL_BONUS_DAYS", 30)
@@ -104,9 +104,10 @@ MORUNE_SHOP_ID = os.getenv("MORUNE_SHOP_ID") or os.getenv("MORUNE_PROJECT_ID")
 MORUNE_PROJECT_ID = MORUNE_SHOP_ID
 MORUNE_BASE_URL = os.getenv("MORUNE_BASE_URL", "https://api.morune.com").rstrip("/")
 MORUNE_WEBHOOK_SECRET = os.getenv("MORUNE_WEBHOOK_SECRET")
-MORUNE_SUCCESS_URL = os.getenv("MORUNE_SUCCESS_URL", f"{BOT_PAYMENT_URL}/success")
-MORUNE_FAIL_URL = os.getenv("MORUNE_FAIL_URL", f"{BOT_PAYMENT_URL}/fail")
+MORUNE_SUCCESS_URL = os.getenv("MORUNE_SUCCESS_URL", f"{BOT_PAYMENT_URL}/success.html")
+MORUNE_FAIL_URL = os.getenv("MORUNE_FAIL_URL", f"{BOT_PAYMENT_URL}/fail.html")
 MORUNE_DEFAULT_CURRENCY = os.getenv("MORUNE_DEFAULT_CURRENCY", "RUB").upper()
+MORUNE_HOOK_URL = os.getenv("MORUNE_HOOK_URL", f"{BOT_PAYMENT_URL}/api/morune/paid")
 PAYMENTS_PUBLIC_TOKEN = os.getenv("PAYMENTS_PUBLIC_TOKEN")
 PAYMENTS_DEFAULT_SOURCE = os.getenv("PAYMENTS_DEFAULT_SOURCE", "site")
 
@@ -114,6 +115,7 @@ PLAN_DURATIONS = {
     "1m": 30,
     "3m": 90,
     "12m": 365,
+    "1y": 365,
 }
 
 logger.info(
@@ -171,6 +173,7 @@ __all__ = [
     "MORUNE_SUCCESS_URL",
     "MORUNE_FAIL_URL",
     "MORUNE_DEFAULT_CURRENCY",
+    "MORUNE_HOOK_URL",
     "PAYMENTS_PUBLIC_TOKEN",
     "PAYMENTS_DEFAULT_SOURCE",
     "EXPIRED_KEY_POLL_SECONDS",

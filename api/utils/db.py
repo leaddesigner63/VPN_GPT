@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS vpn_keys (
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   payment_id TEXT NOT NULL UNIQUE,
+  order_id TEXT NOT NULL UNIQUE,
   username TEXT NOT NULL,
   chat_id INTEGER,
   plan TEXT NOT NULL,
@@ -174,6 +175,7 @@ INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_payments_username ON payments(username)",
     "CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)",
     "CREATE INDEX IF NOT EXISTS idx_payments_provider_payment_id ON payments(provider_payment_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_renewal_notifications_next_attempt ON renewal_notifications(next_attempt_at)",
 )
 
@@ -547,6 +549,7 @@ def _normalise_payment_row(row: dict | None) -> dict | None:
 def create_payment(
     *,
     payment_id: str,
+    order_id: str | None,
     username: str,
     chat_id: int | None,
     plan: str,
@@ -567,6 +570,9 @@ def create_payment(
     referrer_norm = normalise_username(referrer) if referrer else None
     raw_payload_json = json.dumps(raw_provider_payload, ensure_ascii=False) if raw_provider_payload else None
     metadata_json = json.dumps(metadata, ensure_ascii=False) if metadata else None
+    resolved_order_id = (order_id or payment_id).strip()
+    if not resolved_order_id:
+        raise ValueError("order_id is required")
 
     def _operation() -> None:
         with connect() as con:
@@ -574,6 +580,7 @@ def create_payment(
                 """
                 INSERT INTO payments (
                     payment_id,
+                    order_id,
                     username,
                     chat_id,
                     plan,
@@ -593,10 +600,11 @@ def create_payment(
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
+                ( 
                     payment_id,
+                    resolved_order_id,
                     username,
                     chat_id,
                     plan,
@@ -622,6 +630,7 @@ def create_payment(
     logger.info("Created payment", extra={"payment_id": payment_id, "username": username, "plan": plan})
     return {
         "payment_id": payment_id,
+        "order_id": resolved_order_id,
         "username": username,
         "chat_id": chat_id,
         "plan": plan,
@@ -650,6 +659,7 @@ def update_payment_status(
     provider_status: str | None = None,
     payment_url: str | None = None,
     raw_provider_payload: dict | None = None,
+    provider_payment_id: str | None = None,
 ) -> dict | None:
     now = _utcnow().isoformat()
     paid_iso = paid_at.replace(microsecond=0).isoformat() if paid_at else None
@@ -674,6 +684,9 @@ def update_payment_status(
             if raw_payload_json is not None:
                 assignments.append("raw_provider_payload=?")
                 params.append(raw_payload_json)
+            if provider_payment_id is not None:
+                assignments.append("provider_payment_id=?")
+                params.append(provider_payment_id)
 
             params.append(payment_id)
 
@@ -693,6 +706,17 @@ def get_payment(payment_id: str) -> dict | None:
     def _operation() -> dict | None:
         with connect() as con:
             cur = con.execute("SELECT * FROM payments WHERE payment_id=?", (payment_id,))
+            row = cur.fetchone()
+        return _row_to_dict(row)
+
+    result = _run_with_schema_retry(_operation)
+    return _normalise_payment_row(result)
+
+
+def get_payment_by_order(order_id: str) -> dict | None:
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute("SELECT * FROM payments WHERE order_id=?", (order_id,))
             row = cur.fetchone()
         return _row_to_dict(row)
 
@@ -1164,6 +1188,12 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
 
             payment_columns = _table_columns(con, "payments")
             if payment_columns:
+                from api.db.migrations.migration_202409210001_add_payments_order_id import (
+                    ensure_order_id_column,
+                )
+
+                ensure_order_id_column(con)
+                payment_columns = _table_columns(con, "payments")
                 if "currency" not in payment_columns:
                     logger.warning(
                         "Adding missing 'currency' column to payments table", extra={"path": str(resolved)}
@@ -1268,6 +1298,7 @@ __all__ = [
     "create_vpn_key",
     "update_key_expiry",
     "deactivate_key",
+    "get_payment_by_order",
     "create_payment",
     "get_payment",
     "update_payment_status",

@@ -50,7 +50,7 @@ if origins:
     )
 
 # === Routers ===
-from api.endpoints import admin, notify, payments, referrals, users, vpn  # noqa: E402
+from api.endpoints import admin, morune, notify, payments, referrals, users, vpn  # noqa: E402
 from api.utils import db  # noqa: E402
 from api.utils.expired_keys import ExpiredKeyMonitor  # noqa: E402
 from api.utils.notifications import RenewalNotificationScheduler  # noqa: E402
@@ -77,6 +77,7 @@ def ensure_database() -> None:
 app.include_router(vpn.router)
 app.include_router(users.router)
 app.include_router(payments.router)
+app.include_router(morune.router)
 app.include_router(referrals.router)
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
