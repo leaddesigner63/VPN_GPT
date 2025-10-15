@@ -4,6 +4,7 @@ __pycache__/
 .env
 *.json
 !openapi_gpt.json
+!system_prompts.json
 *.sqlite3
 *.db
 .env

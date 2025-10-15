@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any, Deque, Dict
 from urllib.parse import urlencode, urlparse
 
@@ -34,10 +35,46 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GPT_API_KEY = os.getenv("GPT_API_KEY")
 GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-mini")
-SYSTEM_PROMPT = os.getenv(
-    "GPT_SYSTEM_PROMPT",
+
+_SYSTEM_PROMPTS_PATH = Path(__file__).resolve().parent / "system_prompts.json"
+
+
+def _load_system_prompts() -> list[str]:
+    env_prompt = os.getenv("GPT_SYSTEM_PROMPT")
+    if env_prompt:
+        stripped = env_prompt.strip()
+        return [stripped] if stripped else []
+
+    try:
+        raw = _SYSTEM_PROMPTS_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        stripped = raw.strip()
+        return [stripped] if stripped else []
+
+    if isinstance(data, str):
+        stripped = data.strip()
+        return [stripped] if stripped else []
+
+    if isinstance(data, list):
+        prompts: list[str] = []
+        for item in data:
+            if isinstance(item, str):
+                stripped = item.strip()
+                if stripped:
+                    prompts.append(stripped)
+        return prompts
+
+    return []
+
+
+SYSTEM_PROMPTS = _load_system_prompts() or [
     "Ты — VPN_GPT, эксперт по VPN. Отвечай дружелюбно, кратко и по делу.",
-)
+]
 # shell-style inline комментарии в переменных окружения иногда приводят к тому,
 # что стандартный ``int()`` не может преобразовать значение. Чтобы не падать при
 # загрузке конфигурации, очищаем такие комментарии.
@@ -344,8 +381,8 @@ def _remember_exchange(chat_id: int, user_text: str, reply: str) -> None:
 def _build_messages(chat_id: int, user_text: str) -> list[dict[str, str]]:
     history = list(_get_history(chat_id))
     messages: list[dict[str, str]] = []
-    if SYSTEM_PROMPT:
-        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+    for prompt in SYSTEM_PROMPTS:
+        messages.append({"role": "system", "content": prompt})
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
     return messages
