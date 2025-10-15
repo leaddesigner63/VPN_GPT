@@ -49,6 +49,15 @@ def test_build_result_markup_does_not_add_button_for_unsupported_links():
 
     assert not link_buttons
 
+    callback_data = {
+        button.callback_data
+        for row in markup.inline_keyboard
+        for button in row
+        if isinstance(button, InlineKeyboardButton) and button.callback_data
+    }
+
+    assert "show_qr" in callback_data
+
 
 def test_build_result_markup_adds_button_for_supported_link():
     url = "https://vpn-gpt.store"
