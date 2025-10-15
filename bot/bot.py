@@ -82,10 +82,30 @@ class _QrMessageTracker:
             return self._messages.pop(chat_id, None)
 
 
+class _QrLinkStorage:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._links: dict[int, str] = {}
+
+    async def remember(self, chat_id: int, link: str) -> None:
+        async with self._lock:
+            self._links[chat_id] = link
+
+    async def get(self, chat_id: int) -> str | None:
+        async with self._lock:
+            return self._links.get(chat_id)
+
+    async def forget(self, chat_id: int) -> None:
+        async with self._lock:
+            self._links.pop(chat_id, None)
+
+
 _qr_messages = _QrMessageTracker()
+_qr_links = _QrLinkStorage()
 
 
 async def _delete_previous_qr(chat_id: int) -> None:
+    await _qr_links.forget(chat_id)
     message_id = await _qr_messages.pop(chat_id)
     if message_id is None:
         return
@@ -177,8 +197,12 @@ def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     if link:
         normalized_link = link.strip()
-        if normalized_link and _is_supported_button_link(normalized_link):
-            buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)])
+        if normalized_link:
+            if _is_supported_button_link(normalized_link):
+                buttons.append(
+                    [InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)]
+                )
+            buttons.append([InlineKeyboardButton(text="Показать QR", callback_data="show_qr")])
     buttons.extend(_build_action_buttons())
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -339,12 +363,9 @@ async def handle_issue_key(message: Message, username: str) -> None:
     await progress.edit_text(text, reply_markup=build_result_markup(link))
 
     if link:
-        qr = make_qr(link)
-        qr_message = await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-        await _qr_messages.remember(message.chat.id, qr_message.message_id)
+        normalized_link = link.strip()
+        if normalized_link:
+            await _qr_links.remember(message.chat.id, normalized_link)
 
 
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
@@ -374,12 +395,9 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
     await progress.edit_text(text, reply_markup=build_result_markup(link))
 
     if link:
-        qr = make_qr(link)
-        qr_message = await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-        await _qr_messages.remember(message.chat.id, qr_message.message_id)
+        normalized_link = link.strip()
+        if normalized_link:
+            await _qr_links.remember(message.chat.id, normalized_link)
 
 
 async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
@@ -421,12 +439,9 @@ async def handle_renew_key(message: Message, username: str, chat_id: int) -> Non
     await progress.edit_text(text, reply_markup=build_result_markup(link))
 
     if link:
-        qr = make_qr(link)
-        qr_message = await message.answer_photo(
-            BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-            caption="📱 Отсканируй QR-код для быстрого подключения",
-        )
-        await _qr_messages.remember(message.chat.id, qr_message.message_id)
+        normalized_link = link.strip()
+        if normalized_link:
+            await _qr_links.remember(message.chat.id, normalized_link)
 
 
 @dp.callback_query(F.data == "issue_key")
@@ -445,6 +460,32 @@ async def renew_key_callback(callback: CallbackQuery):
         return
     username = callback.from_user.username or f"id_{callback.from_user.id}"
     await handle_renew_key(callback.message, username, callback.message.chat.id)
+
+
+@dp.callback_query(F.data == "show_qr")
+async def show_qr_callback(callback: CallbackQuery):
+    if not callback.message:
+        await callback.answer()
+        return
+
+    chat_id = callback.message.chat.id
+    link = await _qr_links.get(chat_id)
+    if not link:
+        await callback.answer("QR недоступен", show_alert=True)
+        return
+
+    await _delete_previous_qr(chat_id)
+
+    qr = make_qr(link)
+    qr_message = await callback.message.answer_photo(
+        BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
+        caption="📱 Отсканируй QR-код для быстрого подключения",
+    )
+    normalized_link = link.strip()
+    if normalized_link:
+        await _qr_links.remember(chat_id, normalized_link)
+    await _qr_messages.remember(chat_id, qr_message.message_id)
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "get_key")
