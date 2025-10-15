@@ -90,7 +90,14 @@ def test_create_invoice_endpoint_returns_url(monkeypatch, morune_app: MoruneTest
     from api.endpoints import morune as morune_endpoint
     from api.utils.morune_client import InvoiceCreateResult
 
-    async def fake_create_invoice(*, amount: int, order_id: str, plan: str, username: str | None) -> InvoiceCreateResult:
+    async def fake_create_invoice(
+        *,
+        amount: int,
+        order_id: str,
+        plan: str,
+        username: str | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> InvoiceCreateResult:
         return InvoiceCreateResult(
             payment_url="https://pay.example/checkout",
             order_id=order_id,
@@ -131,7 +138,14 @@ def test_morune_webhook_issues_key(monkeypatch, morune_app: MoruneTestEnv) -> No
 
     db_module.upsert_user("bob", 12345)
 
-    async def fake_create_invoice(*, amount: int, order_id: str, plan: str, username: str | None) -> InvoiceCreateResult:
+    async def fake_create_invoice(
+        *,
+        amount: int,
+        order_id: str,
+        plan: str,
+        username: str | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> InvoiceCreateResult:
         return InvoiceCreateResult(
             payment_url="https://pay.example/checkout",
             order_id=order_id,

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -36,17 +37,27 @@ class InvoiceCreateResult:
     raw: dict[str, Any]
 
 
-async def create_invoice(amount: int, order_id: str, plan: str, username: str | None) -> InvoiceCreateResult:
+async def create_invoice(
+    amount: int,
+    order_id: str,
+    plan: str,
+    username: str | None,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> InvoiceCreateResult:
     """Create a Morune invoice and extract the payment URL."""
 
     if not (MORUNE_API_KEY and MORUNE_SHOP_ID):
         logger.error("Morune configuration is incomplete")
         raise legacy_morune.MoruneConfigurationError("morune_not_configured")
 
+    currency_code = (MORUNE_DEFAULT_CURRENCY or "RUB").upper()
+    metadata_payload = dict(metadata or {})
+
     payload: dict[str, Any] = {
         "amount": int(amount),
         "order_id": order_id,
-        "currency": MORUNE_DEFAULT_CURRENCY or "RUB",
+        "currency": currency_code,
         "comment": f"VPN_GPT {plan}",
         "success_url": MORUNE_SUCCESS_URL,
         "fail_url": MORUNE_FAIL_URL,
@@ -55,9 +66,33 @@ async def create_invoice(amount: int, order_id: str, plan: str, username: str | 
         "include_service": ["card"],
     }
 
+    order_block: dict[str, Any] = {
+        "id": order_id,
+        "amount": {
+            "value": format(Decimal(amount), "0.2f"),
+            "currency": currency_code,
+        },
+        "description": f"VPN_GPT {plan}",
+    }
+
     custom_fields: dict[str, Any] = {"plan": plan}
     if username:
         custom_fields["username"] = username
+        order_block["customer"] = {"account": username}
+
+    if metadata_payload:
+        payload["metadata"] = metadata_payload
+        order_block["metadata"] = metadata_payload
+
+    settings_block = {
+        "success_url": MORUNE_SUCCESS_URL,
+        "fail_url": MORUNE_FAIL_URL,
+        "notification_url": MORUNE_HOOK_URL,
+    }
+
+    payload["order"] = order_block
+    payload["settings"] = {key: value for key, value in settings_block.items() if value}
+    payload["payment_methods"] = ["card"]
     payload["custom_fields"] = json.dumps(custom_fields, ensure_ascii=False)
 
     url = f"{MORUNE_BASE_URL}/invoice/create"
@@ -66,6 +101,9 @@ async def create_invoice(amount: int, order_id: str, plan: str, username: str | 
         "accept": "application/json",
         "content-type": "application/json",
     }
+    if MORUNE_SHOP_ID:
+        headers.setdefault("x-shop-id", MORUNE_SHOP_ID)
+        headers.setdefault("x-project-id", MORUNE_SHOP_ID)
 
     logger.info(
         "Creating Morune invoice",

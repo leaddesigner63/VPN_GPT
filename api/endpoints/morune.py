@@ -164,6 +164,7 @@ async def create_invoice_endpoint(request: CreateInvoiceRequest) -> CreateInvoic
             order_id=order_id,
             plan=request.plan,
             username=username,
+            metadata=record.get("metadata"),
         )
     except MoruneConfigurationError as exc:
         db.update_payment_status(order_id, status="failed")
