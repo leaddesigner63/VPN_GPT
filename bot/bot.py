@@ -83,6 +83,19 @@ RENEW_DAYS = int(os.getenv("VPN_RENEW_DAYS", "30"))
 _ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
 
 
+def _build_action_buttons() -> list[list[InlineKeyboardButton]]:
+    """Common set of action buttons shown under bot replies."""
+
+    return [
+        [
+            InlineKeyboardButton(text="🔑 Получить новый ключ", callback_data="issue_key"),
+            InlineKeyboardButton(text="♻️ Продлить доступ", callback_data="renew_key"),
+        ],
+        [InlineKeyboardButton(text="📄 Мой ключ", callback_data="get_key")],
+        [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="show_menu")],
+    ]
+
+
 def build_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -123,7 +136,7 @@ def build_result_markup(link: str | None = None) -> InlineKeyboardMarkup:
         normalized_link = link.strip()
         if normalized_link and _is_supported_button_link(normalized_link):
             buttons.append([InlineKeyboardButton(text="🔗 Открыть ссылку", url=normalized_link)])
-    buttons.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data="show_menu")])
+    buttons.extend(_build_action_buttons())
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -257,7 +270,10 @@ async def renew(msg: Message):
 
 async def handle_issue_key(message: Message, username: str) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer("⏳ Создаю для тебя VPN-ключ…")
+    progress = await message.answer(
+        "⏳ Создаю для тебя VPN-ключ…",
+        reply_markup=build_result_markup(),
+    )
     try:
         payload = await request_key(username)
     except Exception:
@@ -288,7 +304,10 @@ async def handle_issue_key(message: Message, username: str) -> None:
 
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer("🔎 Проверяю информацию о твоём ключе…")
+    progress = await message.answer(
+        "🔎 Проверяю информацию о твоём ключе…",
+        reply_markup=build_result_markup(),
+    )
 
     try:
         payload = await request_key_info(username, chat_id=chat_id)
@@ -320,7 +339,10 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
 
 async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer("♻️ Продлеваю срок действия твоего ключа…")
+    progress = await message.answer(
+        "♻️ Продлеваю срок действия твоего ключа…",
+        reply_markup=build_result_markup(),
+    )
 
     try:
         renew_payload = await renew_key(username)
