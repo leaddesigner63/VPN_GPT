@@ -10,7 +10,7 @@ from typing import Any, Deque, Dict
 from urllib.parse import urlencode, urlparse
 
 import httpx
-from aiogram import Bot, Dispatcher, F
+from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
@@ -213,6 +213,27 @@ class _QrLinkStorage:
 _qr_links = _QrLinkStorage()
 
 
+class _QrCleanupMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):  # type: ignore[override]
+        chat_id: int | None = None
+
+        if isinstance(event, CallbackQuery):
+            if event.data == "show_qr":
+                return await handler(event, data)
+            if event.message:
+                chat_id = event.message.chat.id
+        elif isinstance(event, Message):
+            chat_id = event.chat.id
+
+        if chat_id is None:
+            return await handler(event, data)
+
+        try:
+            return await handler(event, data)
+        finally:
+            await _delete_previous_qr(chat_id)
+
+
 async def _delete_previous_qr(chat_id: int) -> None:
     await _qr_links.forget(chat_id)
     message_id = await _qr_messages.pop(chat_id)
@@ -238,6 +259,11 @@ _histories: Dict[int, ConversationHistory] = defaultdict(
     lambda: deque(maxlen=MAX_HISTORY_MESSAGES * 2 if MAX_HISTORY_MESSAGES > 0 else None)
 )
 BOT_USERNAME: str | None = None
+
+
+_qr_cleanup_middleware = _QrCleanupMiddleware()
+dp.message.middleware.register(_qr_cleanup_middleware)
+dp.callback_query.middleware.register(_qr_cleanup_middleware)
 
 
 MENU_QUICK = "menu_quick"
