@@ -57,8 +57,9 @@ def morune_app(tmp_path, monkeypatch) -> MoruneTestEnv:
 
     db_module.init_db()
 
-    app = FastAPI()
+    app = FastAPI(root_path="/api")
     app.include_router(api_main.morune.router)
+    app.include_router(api_main.morune.legacy_router)
 
     client = TestClient(app)
     try:
