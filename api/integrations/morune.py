@@ -298,15 +298,15 @@ class MoruneClient:
         *,
         base_url: str,
         api_key: str,
-        project_id: str,
+        shop_id: str,
         webhook_secret: str | None = None,
         timeout: float = 15.0,
     ) -> None:
-        if not base_url or not api_key or not project_id:
+        if not base_url or not api_key or not shop_id:
             raise MoruneConfigurationError("Morune configuration is incomplete")
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.project_id = project_id
+        self.shop_id = shop_id
         self.webhook_secret = webhook_secret
         self.timeout = timeout
         self._client = httpx.Client(timeout=timeout)
@@ -317,7 +317,6 @@ class MoruneClient:
     def _headers(self) -> dict[str, str]:
         token = self.api_key.strip()
         return {
-            "Authorization": f"Bearer {token}",
             "X-Api-Key": token,
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -360,55 +359,25 @@ class MoruneClient:
         fail_url: str | None,
     ) -> MoruneInvoice:
         payload: dict[str, Any] = {
-            "project_id": self.project_id,
+            "shop_id": self.shop_id,
             "amount": amount,
             "currency": currency,
             "order_id": payment_id,
             "description": description,
-            "metadata": dict(metadata or {}),
         }
+        if metadata:
+            payload["metadata"] = dict(metadata)
         if success_url:
             payload["success_url"] = success_url
         if fail_url:
             payload["fail_url"] = fail_url
 
-        data = self._request("POST", "/e/api/invoices", json_payload=payload)
+        data = self._request("POST", "/invoice/create", json_payload=payload)
         extracted = self._extract_invoice_fields(
             payload=data,
             payment_id=payment_id,
             fallback_currency=currency,
         )
-
-        detail_payload: dict[str, Any] | None = None
-
-        if not extracted["payment_url"] and extracted["provider_payment_id"]:
-            try:
-                detail_payload = self._request(
-                    "GET",
-                    f"/e/api/invoices/{extracted['provider_payment_id']}",
-                    json_payload=None,
-                )
-            except MoruneAPIError:
-                logger.warning(
-                    "Morune invoice lookup failed to provide payment URL",
-                    extra={
-                        "payment_id": payment_id,
-                        "provider_payment_id": extracted["provider_payment_id"],
-                    },
-                )
-            else:
-                detail_fields = self._extract_invoice_fields(
-                    payload=detail_payload,
-                    payment_id=payment_id,
-                    fallback_currency=currency,
-                )
-                self._merge_invoice_fields(extracted, detail_fields)
-
-        raw_payload: dict[str, Any]
-        if detail_payload is not None:
-            raw_payload = {"create": data, "detail": detail_payload}
-        else:
-            raw_payload = data
 
         provider_payment_id = extracted["provider_payment_id"]
         payment_url = extracted["payment_url"]
@@ -428,7 +397,7 @@ class MoruneClient:
             status=status,
             amount=amount_value,
             currency=currency_value,
-            raw=raw_payload,
+            raw=data,
         )
 
     def _extract_invoice_fields(
