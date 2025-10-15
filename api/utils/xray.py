@@ -119,10 +119,20 @@ def _restart() -> None:
     raise XrayRestartError("xray_restart_failed")
 
 
-def _get_vless_inbound(cfg: dict) -> dict:
+def _iter_vless_inbounds(cfg: dict) -> list[dict]:
+    """Return a list of VLESS inbounds in the supplied configuration."""
+
+    inbounds: list[dict] = []
     for inbound in cfg.get("inbounds", []):
-        if inbound.get("protocol") == "vless":
-            return inbound
+        protocol = inbound.get("protocol")
+        if isinstance(protocol, str) and protocol.casefold() == "vless":
+            inbounds.append(inbound)
+    return inbounds
+
+
+def _get_vless_inbound(cfg: dict) -> dict:
+    for inbound in _iter_vless_inbounds(cfg):
+        return inbound
     logger.error("VLESS inbound not found in Xray configuration")
     raise XrayError("vless_inbound_not_found")
 
@@ -259,16 +269,35 @@ def add_client_no_duplicates(uuid_value: str, email: str) -> bool:
 
 def remove_client(uuid_value: str) -> bool:
     cfg = _load()
-    inbound = _get_vless_inbound(cfg)
-    settings = inbound.setdefault("settings", {})
-    clients = settings.setdefault("clients", [])
-    before = len(clients)
-    settings["clients"] = [client for client in clients if client.get("id") != uuid_value]
-    _save(cfg)
-    _restart()
-    removed = len(settings["clients"]) < before
+    removed = False
+
+    for inbound in _iter_vless_inbounds(cfg):
+        settings = inbound.get("settings")
+        if not isinstance(settings, dict):
+            logger.warning(
+                "Unexpected settings container in Xray config",
+                extra={"type": type(settings).__name__},
+            )
+            continue
+
+        clients = settings.get("clients")
+        if not isinstance(clients, list):
+            logger.warning(
+                "Unexpected clients container type in Xray config",
+                extra={"type": type(clients).__name__},
+            )
+            continue
+
+        filtered = [client for client in clients if client.get("id") != uuid_value]
+        if len(filtered) < len(clients):
+            settings["clients"] = filtered
+            removed = True
+
     if removed:
+        _save(cfg)
+        _restart()
         logger.info("Removed Xray client", extra={"uuid": uuid_value})
-    else:
-        logger.warning("Attempted to remove unknown Xray client", extra={"uuid": uuid_value})
-    return removed
+        return True
+
+    logger.warning("Attempted to remove unknown Xray client", extra={"uuid": uuid_value})
+    return False
