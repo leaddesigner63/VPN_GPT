@@ -39,8 +39,11 @@
     .hero p { color: var(--muted); font-size: 18px; margin-bottom: 32px; }
     .payment-form { max-width: 420px; margin: 0 auto; background: #101730; padding: 28px; border-radius: var(--radius); border: 1px solid rgba(255, 255, 255, 0.08); text-align: left; }
     .payment-form label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 14px; }
+    .payment-form input,
     .payment-form select { width: 100%; padding: 12px; background: #0b1020; color: var(--text); border: 1px solid rgba(195, 255, 255, 0.12); border-radius: var(--radius); margin-bottom: 18px; font-size: 15px; transition: border-color .2s ease; }
+    .payment-form input:focus,
     .payment-form select:focus { outline: none; border-color: var(--accent); }
+    .payment-form input::placeholder { color: rgba(224, 232, 255, 0.6); }
     .btn { display: inline-block; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #02142a; padding: 14px 28px; border-radius: var(--radius); font-weight: 700; transition: .2s; text-align: center; border: none; cursor: pointer; width: 100%; }
     .btn[disabled] { opacity: .6; cursor: wait; }
     .btn:hover:not([disabled]) { opacity: .9; }
@@ -69,6 +72,8 @@
       <p>Выберите срок подписки — мы создадим счёт и перенаправим на защищённую страницу Morune.</p>
       <div class="payment-form">
         <form id="payment-form">
+          <label for="username">Ваш Telegram</label>
+          <input id="username" name="username" type="text" inputmode="text" autocomplete="username" placeholder="@username" required />
           <label for="plan">Тариф</label>
           <select id="plan" name="plan">
             <option value="1m">1 месяц</option>
@@ -96,6 +101,7 @@
 
     const form = document.getElementById('payment-form');
     const planSelect = document.getElementById('plan');
+    const usernameInput = document.getElementById('username');
     const submitBtn = document.getElementById('submit-btn');
     const statusBox = document.getElementById('status');
 
@@ -113,6 +119,25 @@
       if (!trimmed) return undefined;
       return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
     };
+
+    const normaliseUsername = (value) => {
+      if (!value) return undefined;
+      const trimmed = value.trim();
+      if (!trimmed) return undefined;
+      const withoutAt = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+      return withoutAt.trim() || undefined;
+    };
+
+    const presetUsername = resolveUsername();
+    if (presetUsername) {
+      usernameInput.value = `@${presetUsername}`;
+    }
+
+    usernameInput.addEventListener('input', () => {
+      if (statusBox.classList.contains('error')) {
+        setStatus('');
+      }
+    });
 
     const resolveChatId = () => {
       const raw = params.get('c') || params.get('chat_id');
@@ -158,9 +183,10 @@
 
     async function createInvoice(autoRedirect) {
       const plan = planSelect.value;
-      const username = resolveUsername();
+      const username = normaliseUsername(usernameInput.value) || resolveUsername();
       if (!username) {
-        setStatus('Не удалось определить пользователя. Открой ссылку из бота ещё раз.', 'error');
+        setStatus('Укажите ваш Telegram-логин — его можно найти в профиле Telegram.', 'error');
+        usernameInput.focus();
         return;
       }
 
