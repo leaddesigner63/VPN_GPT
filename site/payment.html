@@ -109,7 +109,40 @@
     const resolveUsername = () => {
       const param = params.get('username') || params.get('u');
       if (!param) return undefined;
-      return param.startsWith('@') ? param.slice(1) : param;
+      const trimmed = param.trim();
+      if (!trimmed) return undefined;
+      return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+    };
+
+    const resolveChatId = () => {
+      const raw = params.get('c') || params.get('chat_id');
+      if (!raw) return undefined;
+      const trimmed = raw.trim();
+      return trimmed ? trimmed : undefined;
+    };
+
+    const resolveReferrer = () => {
+      const raw = params.get('r') || params.get('ref') || params.get('referrer');
+      if (!raw) return undefined;
+      const trimmed = raw.trim();
+      if (!trimmed) return undefined;
+      const normalized = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+      return normalized || undefined;
+    };
+
+    const resolveUserId = () => {
+      const raw = params.get('uid') || params.get('user_id');
+      if (!raw) return undefined;
+      const trimmed = raw.trim();
+      return trimmed ? trimmed : undefined;
+    };
+
+    const resolveBotUsername = () => {
+      const raw = params.get('bot') || params.get('bot_username');
+      if (!raw) return undefined;
+      const trimmed = raw.trim();
+      if (!trimmed) return undefined;
+      return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
     };
 
     const setStatus = (text, type) => {
@@ -125,15 +158,36 @@
 
     async function createInvoice(autoRedirect) {
       const plan = planSelect.value;
-      const payload = { plan };
       const username = resolveUsername();
-      if (username) payload.username = username;
+      if (!username) {
+        setStatus('Не удалось определить пользователя. Открой ссылку из бота ещё раз.', 'error');
+        return;
+      }
+
+      const payload = { plan, username };
+      const chatId = resolveChatId();
+      if (chatId) payload.chat_id = chatId;
+
+      const referrer = resolveReferrer();
+      if (referrer && referrer !== username) payload.referrer = referrer;
+
+      const userId = resolveUserId();
+      const botUsername = resolveBotUsername();
+      const metadata = {};
+      if (autoRedirect || chatId || referrer || userId || botUsername) {
+        metadata.channel = 'telegram';
+      }
+      if (userId) metadata.telegram_user_id = userId;
+      if (botUsername) metadata.bot_username = botUsername;
+      if (Object.keys(metadata).length > 0) {
+        payload.metadata = metadata;
+      }
 
       toggleLoading(true);
       setStatus('Создаём счёт…');
 
       try {
-        const response = await fetch('/api/morune/create_invoice', {
+        const response = await fetch('/api/payments/public/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -145,10 +199,12 @@
         }
         const data = await response.json();
         const paymentUrl = data.payment_url;
+        const paymentId = data.payment_id;
         if (!paymentUrl) {
           throw new Error('Ссылка оплаты не получена. Попробуйте позже.');
         }
-        setStatus('Перенаправляем на оплату…', 'success');
+        const successText = paymentId ? `Счёт ${paymentId} создан. Перенаправляем на оплату…` : 'Перенаправляем на оплату…';
+        setStatus(successText, 'success');
         if (autoRedirect) {
           window.location.href = paymentUrl;
         } else {

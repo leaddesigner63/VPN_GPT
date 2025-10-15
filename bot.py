@@ -238,12 +238,22 @@ def build_payment_result_keyboard(pay_url: str | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def build_payment_fallback_url(username: str, plan: str, chat_id: int | None, ref: str | None) -> str:
+def build_payment_page_url(
+    username: str,
+    plan: str,
+    chat_id: int | None,
+    ref: str | None,
+    user_id: int | None,
+) -> str:
     params: dict[str, str] = {"u": username, "plan": plan, "auto": "1"}
     if chat_id:
         params["c"] = str(chat_id)
     if ref:
         params["r"] = ref
+    if user_id:
+        params["uid"] = str(user_id)
+    if BOT_USERNAME:
+        params["bot"] = BOT_USERNAME
     return f"{BOT_PAYMENT_URL}?{urlencode(params)}"
 
 
@@ -362,42 +372,6 @@ async def _request_with_retry(
 
 async def api_post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return await _request_with_retry("POST", path, json_payload=payload)
-
-
-async def create_payment_invoice(
-    username: str,
-    chat_id: int | None,
-    plan: str,
-    referrer: str | None,
-    user_id: int | None,
-) -> dict[str, Any] | None:
-    metadata: dict[str, Any] = {"channel": "telegram"}
-    if user_id:
-        metadata["telegram_user_id"] = user_id
-    if BOT_USERNAME:
-        metadata["bot_username"] = BOT_USERNAME
-    payload = {
-        "username": username,
-        "chat_id": chat_id,
-        "plan": plan,
-        "referrer": referrer if referrer and referrer != username else None,
-        "source": "telegram",
-        "metadata": metadata,
-    }
-    try:
-        return await api_post("/payments/create", payload)
-    except VpnApiUnavailableError as exc:
-        logger.error(
-            "VPN API is unavailable when creating payment invoice",
-            extra={"status": exc.status_code, "plan": plan},
-        )
-        return None
-    except httpx.HTTPStatusError as exc:
-        logger.exception(
-            "Failed to create payment invoice",
-            extra={"status": exc.response.status_code, "plan": plan},
-        )
-        return None
 
 
 async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -682,32 +656,25 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
 
     await register_user(username, chat_id, user.username)
 
-    invoice = await create_payment_invoice(username, chat_id, plan, user.username, user.id)
-    fallback_url = build_payment_fallback_url(username, plan, chat_id, user.username)
-
-    if invoice and invoice.get("payment_url"):
-        pay_url = invoice["payment_url"]
-        payment_id = invoice.get("payment_id", "—")
-        amount = invoice.get("amount") or PLANS.get(plan)
-        logger.info(
-            "Created payment invoice",
-            extra={"payment_id": payment_id, "plan": plan, "username": username},
-        )
-        text = (
-            f"💳 Счёт <b>{payment_id}</b> для тарифа {plan.upper()} создан.\n"
-            f"Сумма к оплате: {amount} ₽. Нажми «Оплатить», чтобы завершить покупку."
-        )
-        markup = build_payment_result_keyboard(pay_url)
+    payment_url = build_payment_page_url(username, plan, chat_id, user.username, user.id)
+    amount = PLANS.get(plan)
+    if amount is not None:
+        price_text = f"Сумма к оплате: {amount} ₽."
     else:
-        logger.warning(
-            "Falling back to manual payment page",
-            extra={"plan": plan, "username": username},
-        )
-        text = (
-            "⚠️ Не удалось получить автоматическую ссылку на оплату. "
-            "Открой резервную страницу и оплатите вручную — мы привяжем платёж к вашему аккаунту."
-        )
-        markup = build_payment_result_keyboard(fallback_url)
+        price_text = ""
+
+    logger.info(
+        "Redirecting user to payment page",
+        extra={"plan": plan, "username": username, "chat_id": chat_id},
+    )
+    text_parts = [
+        f"💳 Тариф {plan.upper()} готов к оплате.",
+        "Нажми «Оплатить», мы передадим данные на сайт и сформируем ссылку оплаты.",
+    ]
+    if price_text:
+        text_parts.insert(1, price_text)
+    text = "\n".join(text_parts)
+    markup = build_payment_result_keyboard(payment_url)
 
     if call.message:
         await call.message.edit_text(text, reply_markup=markup)
