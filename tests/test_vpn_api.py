@@ -70,6 +70,7 @@ def api_app(configured_env, monkeypatch) -> TestClient:
     app.include_router(api_main.vpn.router)
     app.include_router(api_main.payments.router)
     app.include_router(api_main.users.router)
+    app.include_router(api_main.referrals.router)
 
     client = TestClient(app)
     try:
@@ -88,6 +89,29 @@ def _fetch_keys(database: Path, username: str) -> list[sqlite3.Row]:
         con.row_factory = sqlite3.Row
         cur = con.execute("SELECT * FROM vpn_keys WHERE username=?", (username,))
         return cur.fetchall()
+    finally:
+        con.close()
+
+
+def _fetch_user(database: Path, username: str) -> sqlite3.Row | None:
+    con = sqlite3.connect(database)
+    try:
+        con.row_factory = sqlite3.Row
+        cur = con.execute("SELECT * FROM tg_users WHERE username=?", (username,))
+        return cur.fetchone()
+    finally:
+        con.close()
+
+
+def _fetch_referral(database: Path, referrer: str, referee: str) -> sqlite3.Row | None:
+    con = sqlite3.connect(database)
+    try:
+        con.row_factory = sqlite3.Row
+        cur = con.execute(
+            "SELECT * FROM referrals WHERE referrer=? AND referee=?",
+            (referrer, referee),
+        )
+        return cur.fetchone()
     finally:
         con.close()
 
@@ -209,6 +233,82 @@ def test_create_payment_rejects_invalid_referrer(api_app, configured_env):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid_referrer"
+
+
+def test_use_referral_records_referrer(api_app, configured_env):
+    response = api_app.post(
+        "/referral/use",
+        json={"referrer": "Alice", "referee": "Bob", "chat_id": 555},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["referrer"] == "Alice"
+    assert body["referee"] == "Bob"
+    assert body["already_exists"] is False
+
+    user = _fetch_user(configured_env.database, body["referee"])
+    assert user is not None
+    assert user["referrer"] == body["referrer"]
+    assert user["chat_id"] == 555
+
+    repeat = api_app.post(
+        "/referral/use",
+        json={"referrer": "Alice", "referee": "Bob"},
+        headers=auth_headers(),
+    )
+    assert repeat.status_code == 200
+    assert repeat.json()["already_exists"] is True
+
+
+def test_use_referral_rejects_conflicting_referrer(api_app, configured_env):
+    api_app.post(
+        "/referral/use",
+        json={"referrer": "alice", "referee": "bob"},
+        headers=auth_headers(),
+    )
+
+    conflict = api_app.post(
+        "/referral/use",
+        json={"referrer": "carol", "referee": "bob"},
+        headers=auth_headers(),
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == "referrer_already_set"
+
+
+def test_referral_bonus_awarded_on_payment(api_app, configured_env):
+    api_app.post(
+        "/referral/use",
+        json={"referrer": "alice", "referee": "bob", "chat_id": 321},
+        headers=auth_headers(),
+    )
+
+    create = api_app.post(
+        "/payments/create",
+        json={"username": "bob", "plan": "1m", "chat_id": 123},
+        headers=auth_headers(),
+    )
+    assert create.status_code == 200
+    payment_id = create.json()["payment_id"]
+
+    confirm = api_app.post(
+        "/payments/confirm",
+        json={"payment_id": payment_id, "username": "bob", "plan": "1m"},
+        headers=auth_headers(),
+    )
+
+    assert confirm.status_code == 200
+    referral_record = _fetch_referral(configured_env.database, "alice", "bob")
+    assert referral_record is not None
+    assert referral_record["bonus_days"] == 30
+
+    referrer_keys = _fetch_keys(configured_env.database, "alice")
+    assert len(referrer_keys) == 1
+    assert referrer_keys[0]["trial"] == 0
 
 
 def test_issue_key_returns_503_when_service_token_missing(tmp_path, monkeypatch):
