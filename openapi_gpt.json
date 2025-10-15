@@ -5,6 +5,12 @@
     "description": "API for GPT Actions — manage VPN keys, users, and notifications",
     "version": "1.0.0"
   },
+  "servers": [
+    {
+      "url": "https://vpn-gpt.store/api",
+      "description": "Production deployment"
+    }
+  ],
   "paths": {
     "/vpn/issue_key": {
       "post": {
