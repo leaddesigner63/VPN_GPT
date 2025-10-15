@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>VPN_GPT — Админ-панель</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --bg-alt: #111c34;
+        --panel: rgba(15, 23, 42, 0.85);
+        --border: rgba(148, 163, 184, 0.25);
+        --text: #e2e8f0;
+        --text-muted: #cbd5f5;
+        --accent: #38bdf8;
+        --accent-strong: #0ea5e9;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --error: #ef4444;
+        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.97), rgba(30, 41, 59, 0.97));
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        padding: 2rem clamp(1.5rem, 2vw + 1rem, 3rem) 1rem;
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(14, 165, 233, 0.15));
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 1.4rem + 1vw, 2.6rem);
+        letter-spacing: 0.02em;
+      }
+
+      header p {
+        margin: 0.75rem 0 0;
+        max-width: 70ch;
+        color: var(--text-muted);
+      }
+
+      main {
+        padding: 1rem clamp(1rem, 2vw + 0.5rem, 3rem) 2.5rem;
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .controls {
+        display: grid;
+        gap: 1rem;
+        padding: 1.5rem;
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+      }
+
+      .controls-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-size: 0.95rem;
+        color: var(--text-muted);
+      }
+
+      input[type="text"],
+      input[type="search"],
+      textarea,
+      select {
+        width: min(420px, 100%);
+        padding: 0.6rem 0.8rem;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: rgba(15, 23, 42, 0.45);
+        color: var(--text);
+        font-size: 1rem;
+        transition: border 120ms ease, box-shadow 120ms ease;
+      }
+
+      textarea {
+        min-height: 7rem;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+      }
+
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.25);
+      }
+
+      .controls button {
+        border: none;
+        background: var(--accent);
+        color: #0f172a;
+        padding: 0.65rem 1rem;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+
+      .controls button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(56, 189, 248, 0.25);
+      }
+
+      .controls button.secondary {
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--text);
+      }
+
+      .controls button.secondary:hover {
+        box-shadow: 0 6px 18px rgba(148, 163, 184, 0.25);
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .endpoints {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+
+      .endpoint {
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.7);
+        backdrop-filter: blur(18px);
+        overflow: hidden;
+        transition: border 160ms ease, box-shadow 160ms ease;
+      }
+
+      .endpoint-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 1.5rem;
+        cursor: pointer;
+        background: rgba(15, 23, 42, 0.75);
+      }
+
+      .endpoint-header:hover {
+        background: rgba(30, 41, 59, 0.82);
+      }
+
+      .endpoint-header .info {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .method {
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        letter-spacing: 0.06em;
+      }
+
+      .method.get {
+        background: rgba(34, 197, 94, 0.18);
+        color: var(--success);
+      }
+
+      .method.post {
+        background: rgba(59, 130, 246, 0.18);
+        color: var(--accent);
+      }
+
+      .method.put,
+      .method.patch {
+        background: rgba(245, 158, 11, 0.18);
+        color: var(--warning);
+      }
+
+      .method.delete {
+        background: rgba(239, 68, 68, 0.18);
+        color: var(--error);
+      }
+
+      .path {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.95rem;
+      }
+
+      .summary {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+      }
+
+      .toggle-icon {
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        transition: transform 160ms ease;
+      }
+
+      .endpoint[open] .toggle-icon {
+        transform: rotate(90deg);
+      }
+
+      .endpoint-body {
+        padding: 1.5rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.15);
+        display: grid;
+        gap: 1.25rem;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .tag {
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.12);
+        color: var(--accent);
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+      }
+
+      .endpoint-form {
+        display: grid;
+        gap: 1rem;
+      }
+
+      fieldset {
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 12px;
+        padding: 1rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      fieldset legend {
+        padding: 0 0.4rem;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+      }
+
+      .param-field {
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .param-meta {
+        color: rgba(226, 232, 240, 0.65);
+        font-size: 0.8rem;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .submit-btn {
+        border: none;
+        background: var(--accent-strong);
+        color: #0f172a;
+        padding: 0.75rem 1.4rem;
+        border-radius: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+
+      .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(14, 165, 233, 0.28);
+      }
+
+      pre {
+        margin: 0;
+        padding: 1rem;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .response {
+        display: grid;
+        gap: 0.6rem;
+      }
+
+      .response .status {
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+
+      .status.ok {
+        color: var(--success);
+      }
+
+      .status.error {
+        color: var(--error);
+      }
+
+      .status.pending {
+        color: var(--warning);
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        border: 2px dashed rgba(148, 163, 184, 0.25);
+        border-radius: 18px;
+        color: var(--text-muted);
+      }
+
+      .status-bar {
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: rgba(56, 189, 248, 0.12);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        color: var(--accent);
+        display: none;
+      }
+
+      .status-bar.visible {
+        display: block;
+      }
+
+      @media (max-width: 720px) {
+        header {
+          padding-inline: 1.25rem;
+        }
+        main {
+          padding-inline: 1rem;
+        }
+        .controls {
+          padding: 1.1rem;
+        }
+        input[type="text"],
+        input[type="search"],
+        textarea {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>VPN_GPT — Админ-панель</h1>
+      <p>
+        Управляйте всеми доступными API-эндпоинтами проекта из единого интерфейса.
+        Панель автоматически считывает OpenAPI-схему, строит формы запросов и позволяет
+        выполнять любые операции, включая защищённые токеном админ-функции.
+      </p>
+    </header>
+    <main>
+      <section class="controls" aria-label="Глобальные настройки">
+        <div class="controls-row">
+          <label>
+            Базовый URL
+            <input id="base-url" type="text" spellcheck="false" autocomplete="off" />
+          </label>
+          <label>
+            Admin Token (X-Admin-Token)
+            <input id="admin-token" type="text" spellcheck="false" autocomplete="off" placeholder="необязательно" />
+          </label>
+          <label>
+            Поиск по эндпоинтам
+            <input id="search" type="search" placeholder="Название, путь или тег" />
+          </label>
+        </div>
+        <div class="toolbar">
+          <button id="refresh" type="button">Обновить схему</button>
+          <button id="expand-all" type="button" class="secondary">Раскрыть всё</button>
+          <button id="collapse-all" type="button" class="secondary">Свернуть всё</button>
+        </div>
+        <div id="status-bar" class="status-bar" role="status"></div>
+      </section>
+
+      <section id="endpoints" class="endpoints" aria-live="polite"></section>
+      <div id="empty-state" class="empty-state" hidden>
+        Эндпоинты не найдены. Попробуйте изменить поисковый запрос или обновить схему.
+      </div>
+    </main>
+
+    <script>
+      const state = {
+        spec: null,
+        filtered: [],
+        expanded: new Set(),
+      };
+
+      const selectors = {
+        baseUrl: document.getElementById("base-url"),
+        adminToken: document.getElementById("admin-token"),
+        search: document.getElementById("search"),
+        refresh: document.getElementById("refresh"),
+        expandAll: document.getElementById("expand-all"),
+        collapseAll: document.getElementById("collapse-all"),
+        endpoints: document.getElementById("endpoints"),
+        statusBar: document.getElementById("status-bar"),
+        emptyState: document.getElementById("empty-state"),
+      };
+
+      const METHOD_PRIORITY = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"];
+
+      function setStatus(message, tone = "info") {
+        selectors.statusBar.textContent = message;
+        selectors.statusBar.className = `status-bar visible tone-${tone}`;
+      }
+
+      function clearStatus() {
+        selectors.statusBar.className = "status-bar";
+        selectors.statusBar.textContent = "";
+      }
+
+      function resolveBaseUrl() {
+        const value = selectors.baseUrl.value.trim();
+        if (!value) {
+          const fallback = `${window.location.origin}`;
+          selectors.baseUrl.value = fallback;
+          return fallback;
+        }
+        return value.replace(/\/$/, "");
+      }
+
+      async function loadOpenApi() {
+        try {
+          setStatus("Загружаем OpenAPI-схему…", "info");
+          const response = await fetch("/openapi.json", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`Не удалось загрузить схему: ${response.status}`);
+          }
+          const spec = await response.json();
+          state.spec = spec;
+          setStatus("Схема успешно обновлена", "success");
+          renderEndpoints();
+          setTimeout(clearStatus, 2500);
+        } catch (error) {
+          console.error(error);
+          setStatus(`Ошибка: ${error.message}`, "error");
+        }
+      }
+
+      function normalizeText(value) {
+        return (value || "").toString().toLowerCase();
+      }
+
+      function buildEndpointIndex() {
+        if (!state.spec || !state.spec.paths) {
+          return [];
+        }
+        const entries = [];
+        Object.entries(state.spec.paths).forEach(([path, operations]) => {
+          Object.entries(operations).forEach(([method, operation]) => {
+            const upperMethod = method.toUpperCase();
+            if (!METHOD_PRIORITY.includes(upperMethod)) {
+              return;
+            }
+            entries.push({
+              path,
+              method: upperMethod,
+              operation,
+            });
+          });
+        });
+        entries.sort((a, b) => {
+          const methodCompare =
+            METHOD_PRIORITY.indexOf(a.method) - METHOD_PRIORITY.indexOf(b.method);
+          if (methodCompare !== 0) {
+            return methodCompare;
+          }
+          return a.path.localeCompare(b.path);
+        });
+        return entries;
+      }
+
+      function renderEndpoints() {
+        selectors.endpoints.innerHTML = "";
+        const entries = buildEndpointIndex();
+        if (!entries.length) {
+          selectors.emptyState.hidden = false;
+          return;
+        }
+        selectors.emptyState.hidden = true;
+        const filter = normalizeText(selectors.search.value);
+        const fragment = document.createDocumentFragment();
+        const filtered = [];
+        entries.forEach((entry, index) => {
+          const { path, method, operation } = entry;
+          const searchable = [path, method, operation.summary, operation.operationId]
+            .concat(operation.tags || [])
+            .map(normalizeText)
+            .join(" ");
+          if (filter && !searchable.includes(filter)) {
+            return;
+          }
+          const element = buildEndpointCard(entry, index);
+          fragment.appendChild(element);
+          filtered.push(element);
+        });
+        selectors.endpoints.appendChild(fragment);
+        selectors.emptyState.hidden = filtered.length !== 0;
+        state.filtered = filtered;
+      }
+
+      function buildEndpointCard(entry, index) {
+        const { path, method, operation } = entry;
+        const card = document.createElement("article");
+        card.className = "endpoint";
+        card.dataset.path = path;
+        card.dataset.method = method;
+        card.dataset.index = String(index);
+        card.dataset.tags = (operation.tags || []).join(",");
+        card.dataset.summary = operation.summary || "";
+
+        const header = document.createElement("div");
+        header.className = "endpoint-header";
+
+        const info = document.createElement("div");
+        info.className = "info";
+
+        const methodBadge = document.createElement("span");
+        methodBadge.className = `method ${method.toLowerCase()}`;
+        methodBadge.textContent = method;
+        info.appendChild(methodBadge);
+
+        const pathSpan = document.createElement("span");
+        pathSpan.className = "path";
+        pathSpan.textContent = path;
+        info.appendChild(pathSpan);
+
+        header.appendChild(info);
+
+        const summary = document.createElement("div");
+        summary.className = "summary";
+        summary.textContent = operation.summary || operation.operationId || "Без описания";
+        header.appendChild(summary);
+
+        const toggle = document.createElement("div");
+        toggle.className = "toggle-icon";
+        toggle.innerHTML = "&#9656;";
+        header.appendChild(toggle);
+
+        card.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "endpoint-body";
+        body.hidden = !state.expanded.has(path + method);
+
+        if (operation.description) {
+          const description = document.createElement("div");
+          description.innerHTML = operation.description;
+          body.appendChild(description);
+        }
+
+        if (operation.tags && operation.tags.length) {
+          const tagList = document.createElement("div");
+          tagList.className = "tags";
+          operation.tags.forEach((tag) => {
+            const badge = document.createElement("span");
+            badge.className = "tag";
+            badge.textContent = tag;
+            tagList.appendChild(badge);
+          });
+          body.appendChild(tagList);
+        }
+
+        const form = document.createElement("form");
+        form.className = "endpoint-form";
+        form.dataset.method = method;
+        form.dataset.path = path;
+
+        const parameterGroups = buildParameterGroups(operation.parameters || []);
+        parameterGroups.forEach((group) => form.appendChild(group));
+
+        if (operation.requestBody) {
+          form.appendChild(buildRequestBody(operation.requestBody));
+        }
+
+        form.appendChild(buildHeadersFieldset());
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "submit-btn";
+        submit.textContent = `${method} ${path}`;
+        actions.appendChild(submit);
+        form.appendChild(actions);
+
+        const response = document.createElement("div");
+        response.className = "response";
+        const status = document.createElement("div");
+        status.className = "status";
+        status.textContent = "Ответ ещё не запрошен";
+        response.appendChild(status);
+        const pre = document.createElement("pre");
+        pre.textContent = "";
+        response.appendChild(pre);
+        form.appendChild(response);
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          submitRequest(form, status, pre);
+        });
+
+        body.appendChild(form);
+        card.appendChild(body);
+
+        header.addEventListener("click", () => {
+          const key = path + method;
+          body.hidden = !body.hidden;
+          if (!body.hidden) {
+            state.expanded.add(key);
+            card.setAttribute("open", "");
+          } else {
+            state.expanded.delete(key);
+            card.removeAttribute("open");
+          }
+        });
+
+        if (!body.hidden) {
+          card.setAttribute("open", "");
+        }
+
+        return card;
+      }
+
+      function buildParameterGroups(parameters) {
+        const byLocation = new Map();
+        parameters.forEach((param) => {
+          if (!param || !param.name) return;
+          const location = param.in || "query";
+          if (!byLocation.has(location)) {
+            const fieldset = document.createElement("fieldset");
+            fieldset.dataset.group = location;
+            const legend = document.createElement("legend");
+            legend.textContent =
+              location === "path"
+                ? "Параметры пути"
+                : location === "query"
+                ? "Query-параметры"
+                : location === "header"
+                ? "Заголовки"
+                : location === "cookie"
+                ? "Cookie"
+                : location;
+            fieldset.appendChild(legend);
+            byLocation.set(location, fieldset);
+          }
+          const fieldset = byLocation.get(location);
+          fieldset.appendChild(buildParameterField(param));
+        });
+        return Array.from(byLocation.values());
+      }
+
+      function buildParameterField(parameter) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "param-field";
+
+        const label = document.createElement("label");
+        label.textContent = parameter.name + (parameter.required ? " *" : "");
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.name = parameter.name;
+        input.dataset.paramType = parameter.in;
+        input.placeholder = parameter.schema?.type || "";
+        if (parameter.schema && "default" in parameter.schema) {
+          input.value = parameter.schema.default;
+        }
+        if (parameter.required) {
+          input.required = true;
+        }
+
+        label.appendChild(input);
+        wrapper.appendChild(label);
+
+        if (parameter.description) {
+          const meta = document.createElement("div");
+          meta.className = "param-meta";
+          meta.textContent = parameter.description;
+          wrapper.appendChild(meta);
+        }
+        return wrapper;
+      }
+
+      function buildRequestBody(requestBody) {
+        const fieldset = document.createElement("fieldset");
+        fieldset.dataset.group = "body";
+        const legend = document.createElement("legend");
+        legend.textContent = "Тело запроса";
+        fieldset.appendChild(legend);
+
+        const description = requestBody.description;
+        if (description) {
+          const meta = document.createElement("div");
+          meta.className = "param-meta";
+          meta.textContent = description;
+          fieldset.appendChild(meta);
+        }
+
+        const textarea = document.createElement("textarea");
+        textarea.dataset.role = "body";
+        textarea.placeholder = "JSON";
+        const example = extractExampleFromRequest(requestBody);
+        if (example) {
+          textarea.value = example;
+        }
+        fieldset.appendChild(textarea);
+        return fieldset;
+      }
+
+      function buildHeadersFieldset() {
+        const fieldset = document.createElement("fieldset");
+        const legend = document.createElement("legend");
+        legend.textContent = "Дополнительные заголовки (JSON)";
+        fieldset.appendChild(legend);
+
+        const textarea = document.createElement("textarea");
+        textarea.dataset.role = "headers";
+        textarea.placeholder = '{"Custom-Header": "value"}';
+        textarea.rows = 4;
+        fieldset.appendChild(textarea);
+        return fieldset;
+      }
+
+      function extractExampleFromRequest(requestBody) {
+        const content = requestBody.content || {};
+        const jsonContent = content["application/json"] || content["application/*"];
+        if (!jsonContent) {
+          return "";
+        }
+        const example =
+          jsonContent.example ||
+          (Array.isArray(jsonContent.examples)
+            ? jsonContent.examples[0]
+            : jsonContent.examples && typeof jsonContent.examples === "object"
+            ? Object.values(jsonContent.examples)[0]?.value
+            : null);
+        if (example) {
+          return formatJson(example);
+        }
+        const schema = jsonContent.schema;
+        if (!schema) return "";
+        const sample = buildSampleFromSchema(schema, state.spec?.components?.schemas || {});
+        return sample ? formatJson(sample) : "";
+      }
+
+      function buildSampleFromSchema(schema, definitions, stack = new Set()) {
+        if (!schema) return null;
+        if (schema.example !== undefined) {
+          return schema.example;
+        }
+        if (schema.$ref) {
+          const ref = schema.$ref.replace("#/components/schemas/", "");
+          if (stack.has(ref)) {
+            return null;
+          }
+          stack.add(ref);
+          const resolved = definitions?.[ref];
+          const value = buildSampleFromSchema(resolved, definitions, stack);
+          stack.delete(ref);
+          return value;
+        }
+        const type = schema.type;
+        if (type === "object" || (!type && schema.properties)) {
+          const result = {};
+          const props = schema.properties || {};
+          Object.entries(props).forEach(([key, value]) => {
+            result[key] = buildSampleFromSchema(value, definitions, stack) ?? null;
+          });
+          return result;
+        }
+        if (type === "array") {
+          const item = buildSampleFromSchema(schema.items, definitions, stack);
+          return item === null ? [] : [item];
+        }
+        if (type === "integer" || type === "number") {
+          return schema.default ?? 0;
+        }
+        if (type === "boolean") {
+          return schema.default ?? false;
+        }
+        return schema.default ?? "";
+      }
+
+      function formatJson(value) {
+        if (typeof value === "string") {
+          try {
+            return JSON.stringify(JSON.parse(value), null, 2);
+          } catch (error) {
+            return value;
+          }
+        }
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (error) {
+          return "";
+        }
+      }
+
+      async function submitRequest(form, statusEl, preEl) {
+        const method = form.dataset.method;
+        const path = form.dataset.path;
+        const baseUrl = resolveBaseUrl();
+        let urlPath = path;
+        const pathInputs = form.querySelectorAll('[data-param-type="path"]');
+        for (const input of pathInputs) {
+          const value = input.value.trim();
+          if (!value && input.required) {
+            statusEl.className = "status error";
+            statusEl.textContent = `Параметр ${input.name} обязателен.`;
+            return;
+          }
+          urlPath = urlPath.replace(`{${input.name}}`, encodeURIComponent(value));
+        }
+        const url = new URL(urlPath, baseUrl);
+        const queryInputs = form.querySelectorAll('[data-param-type="query"]');
+        const query = new URLSearchParams(url.search);
+        for (const input of queryInputs) {
+          const value = input.value.trim();
+          if (!value) continue;
+          query.set(input.name, value);
+        }
+        const search = query.toString();
+        url.search = search;
+
+        const headers = {
+          Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+        };
+        const token = selectors.adminToken.value.trim();
+        if (token) {
+          headers["X-Admin-Token"] = token;
+        }
+
+        const extraHeadersText = form.querySelector('textarea[data-role="headers"]').value.trim();
+        if (extraHeadersText) {
+          try {
+            const parsed = JSON.parse(extraHeadersText);
+            Object.entries(parsed).forEach(([key, value]) => {
+              if (value !== undefined && value !== null) {
+                headers[key] = String(value);
+              }
+            });
+          } catch (error) {
+            statusEl.className = "status error";
+            statusEl.textContent = `Ошибка парсинга заголовков: ${error.message}`;
+            return;
+          }
+        }
+
+        const requestInit = {
+          method,
+          headers,
+        };
+
+        const bodyField = form.querySelector('textarea[data-role="body"]');
+        if (bodyField && method !== "GET" && method !== "DELETE") {
+          const bodyValue = bodyField.value.trim();
+          if (bodyValue) {
+            try {
+              JSON.parse(bodyValue);
+              requestInit.body = bodyValue;
+              headers["Content-Type"] = "application/json";
+            } catch (error) {
+              statusEl.className = "status error";
+              statusEl.textContent = `Некорректный JSON: ${error.message}`;
+              return;
+            }
+          }
+        }
+
+        statusEl.className = "status pending";
+        statusEl.textContent = "Выполняем запрос…";
+        preEl.textContent = "";
+
+        try {
+          const response = await fetch(url.toString(), requestInit);
+          const text = await response.text();
+          let formatted = text;
+          try {
+            formatted = JSON.stringify(JSON.parse(text), null, 2);
+          } catch (error) {
+            // not json
+          }
+          const statusLine = `${response.status} ${response.statusText || ""}`.trim();
+          statusEl.className = response.ok ? "status ok" : "status error";
+          statusEl.textContent = `Ответ: ${statusLine}`;
+          preEl.textContent = formatted || "(пустой ответ)";
+        } catch (error) {
+          statusEl.className = "status error";
+          statusEl.textContent = `Ошибка запроса: ${error.message}`;
+          preEl.textContent = "";
+        }
+      }
+
+      function expandAll() {
+        state.filtered.forEach((card) => {
+          const body = card.querySelector(".endpoint-body");
+          if (body && body.hidden) {
+            body.hidden = false;
+            card.setAttribute("open", "");
+            state.expanded.add(card.dataset.path + card.dataset.method);
+          }
+        });
+      }
+
+      function collapseAll() {
+        state.filtered.forEach((card) => {
+          const body = card.querySelector(".endpoint-body");
+          if (body && !body.hidden) {
+            body.hidden = true;
+            card.removeAttribute("open");
+            state.expanded.delete(card.dataset.path + card.dataset.method);
+          }
+        });
+      }
+
+      selectors.search.addEventListener("input", () => {
+        renderEndpoints();
+      });
+
+      selectors.refresh.addEventListener("click", () => {
+        loadOpenApi();
+      });
+
+      selectors.expandAll.addEventListener("click", expandAll);
+      selectors.collapseAll.addEventListener("click", collapseAll);
+
+      window.addEventListener("DOMContentLoaded", () => {
+        resolveBaseUrl();
+        loadOpenApi();
+      });
+    </script>
+  </body>
+</html>
