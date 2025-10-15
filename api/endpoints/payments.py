@@ -7,15 +7,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from api import config
 from api.config import (
     DEFAULT_COUNTRY,
-    MORUNE_API_KEY,
-    MORUNE_BASE_URL,
     MORUNE_DEFAULT_CURRENCY,
     MORUNE_FAIL_URL,
-    MORUNE_SHOP_ID,
     MORUNE_SUCCESS_URL,
-    MORUNE_WEBHOOK_SECRET,
     PAYMENTS_DEFAULT_SOURCE,
     PAYMENTS_PUBLIC_TOKEN,
     REFERRAL_BONUS_DAYS,
@@ -37,25 +34,41 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 logger = get_logger("endpoints.payments")
 
 _MORUNE_CLIENT: MoruneClient | None = None
+_MORUNE_CLIENT_SETTINGS: tuple[str, str, str, str] | None = None
 
 
 def _get_morune_client() -> MoruneClient | None:
-    global _MORUNE_CLIENT
-    if _MORUNE_CLIENT is not None:
-        return _MORUNE_CLIENT
-    if not (MORUNE_API_KEY and MORUNE_SHOP_ID):
+    global _MORUNE_CLIENT, _MORUNE_CLIENT_SETTINGS
+
+    api_key = config.MORUNE_API_KEY or ""
+    shop_id = config.MORUNE_SHOP_ID or ""
+    base_url = config.MORUNE_BASE_URL
+    webhook_secret = config.MORUNE_WEBHOOK_SECRET or ""
+
+    if not (api_key and shop_id):
+        if _MORUNE_CLIENT is not None:
+            _MORUNE_CLIENT.close()
+        _MORUNE_CLIENT = None
+        _MORUNE_CLIENT_SETTINGS = None
         return None
+
+    desired_settings = (api_key, shop_id, base_url, webhook_secret)
+
+    if _MORUNE_CLIENT is not None and _MORUNE_CLIENT_SETTINGS == desired_settings:
+        return _MORUNE_CLIENT
     try:
         _MORUNE_CLIENT = MoruneClient(
-            base_url=MORUNE_BASE_URL,
-            api_key=MORUNE_API_KEY,
-            shop_id=MORUNE_SHOP_ID,
-            webhook_secret=MORUNE_WEBHOOK_SECRET,
+            base_url=base_url,
+            api_key=api_key,
+            shop_id=shop_id,
+            webhook_secret=webhook_secret or None,
         )
-        logger.info("Morune client initialised", extra={"base_url": MORUNE_BASE_URL})
+        _MORUNE_CLIENT_SETTINGS = desired_settings
+        logger.info("Morune client initialised", extra={"base_url": base_url})
     except MoruneConfigurationError:
         logger.warning("Morune configuration incomplete; client disabled")
         _MORUNE_CLIENT = None
+        _MORUNE_CLIENT_SETTINGS = None
     return _MORUNE_CLIENT
 
 
@@ -287,6 +300,7 @@ def _create_payment_internal(
 
     record = db.create_payment(
         payment_id=payment_id,
+        order_id=payment_id,
         username=normalized_username,
         chat_id=chat_id,
         plan=plan,

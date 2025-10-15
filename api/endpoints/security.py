@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import Header, HTTPException, Query, status
 
-from api.config import ADMIN_TOKEN, INTERNAL_TOKEN
+from api import config
 from api.utils.logging import get_logger
 
 logger = get_logger("endpoints.security")
@@ -15,7 +15,7 @@ def require_service_token(
     x_admin_query: str | None = Query(default=None, alias="x-admin-token"),
     x_internal_query: str | None = Query(default=None, alias="x-internal-token"),
 ) -> None:
-    valid_tokens = {token for token in (ADMIN_TOKEN, INTERNAL_TOKEN) if token}
+    valid_tokens = {token for token in (config.ADMIN_TOKEN, config.INTERNAL_TOKEN) if token}
     if not valid_tokens:
         logger.error("Service tokens are not configured")
         raise HTTPException(

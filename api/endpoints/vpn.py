@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from api.config import DEFAULT_COUNTRY, TRIAL_DAYS
+from api import config
 from api.endpoints.security import require_service_token
 from api.utils import db
 from api.utils.logging import get_logger
@@ -81,7 +81,7 @@ def issue_key(request: IssueKeyRequest, _: None = Depends(require_service_token)
         logger.info("Returning existing active key", extra={"username": username})
         return _build_key_response(existing, reused=True)
 
-    if not request.trial or TRIAL_DAYS <= 0:
+    if not request.trial or config.TRIAL_DAYS <= 0:
         logger.info("Trial disabled", extra={"username": username})
         return _json_error("trial_unavailable", status_code=status.HTTP_409_CONFLICT)
 
@@ -89,7 +89,7 @@ def issue_key(request: IssueKeyRequest, _: None = Depends(require_service_token)
         logger.info("User already consumed trial", extra={"username": username})
         return _json_error("trial_already_used", status_code=status.HTTP_409_CONFLICT)
 
-    expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=TRIAL_DAYS)
+    expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=config.TRIAL_DAYS)
     uuid_value = str(uuid.uuid4())
     label = request.label or f"VPN_GPT_{username}"
     link = build_vless_link(uuid_value, label)
@@ -100,7 +100,7 @@ def issue_key(request: IssueKeyRequest, _: None = Depends(require_service_token)
         link=link,
         expires_at=expires_at,
         label=label,
-        country=request.country or DEFAULT_COUNTRY,
+        country=request.country or config.DEFAULT_COUNTRY,
         trial=True,
     )
     return _build_key_response(payload)
@@ -142,7 +142,7 @@ def renew_key(request: RenewKeyRequest, _: None = Depends(require_service_token)
         link=link,
         expires_at=expires_at,
         label=label,
-        country=request.country or DEFAULT_COUNTRY,
+        country=request.country or config.DEFAULT_COUNTRY,
         trial=False,
     )
     logger.info(

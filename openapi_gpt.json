@@ -165,6 +165,81 @@
         ]
       }
     },
+    "/morune/create_invoice": {
+      "post": {
+        "tags": [
+          "morune"
+        ],
+        "summary": "Create Morune Invoice",
+        "operationId": "moruneCreateInvoice",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoruneCreateInvoiceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoruneCreateInvoiceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error"
+          }
+        }
+      }
+    },
+    "/morune/paid": {
+      "post": {
+        "tags": [
+          "morune"
+        ],
+        "summary": "Handle Morune Webhook",
+        "operationId": "moruneWebhookPaid",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoruneWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Signature"
+          },
+          "404": {
+            "description": "Order Not Found"
+          }
+        }
+      }
+    },
     "/vpn/users/{username}": {
       "get": {
         "tags": [
@@ -706,6 +781,64 @@
           }
         },
         "title": "NotifyRequest"
+      },
+      "MoruneCreateInvoiceRequest": {
+        "type": "object",
+        "required": [
+          "plan"
+        ],
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "1m",
+              "3m",
+              "1y"
+            ],
+            "description": "Tariff code"
+          },
+          "username": {
+            "type": "string",
+            "description": "Telegram username без @",
+            "nullable": true
+          }
+        },
+        "title": "MoruneCreateInvoiceRequest"
+      },
+      "MoruneCreateInvoiceResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "payment_url",
+          "order_id"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          },
+          "payment_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "order_id": {
+            "type": "string"
+          }
+        },
+        "title": "MoruneCreateInvoiceResponse"
+      },
+      "MoruneWebhookResponse": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "title": "MoruneWebhookResponse"
       },
       "RenewKeyResponse": {
         "type": "object",
