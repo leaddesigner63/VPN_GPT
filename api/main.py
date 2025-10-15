@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from importlib import resources
 from typing import Any
 from urllib.parse import urlparse
 
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from api.utils.logging import configure_logging, get_logger
@@ -89,6 +90,20 @@ app.include_router(morune.legacy_router)
 app.include_router(referrals.router)
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+
+
+def _load_admin_panel_html() -> str:
+    """Return the pre-built admin panel HTML."""
+
+    html_path = resources.files("api.admin_panel").joinpath("admin_panel.html")
+    return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/admin/ui", include_in_schema=False, response_class=HTMLResponse)
+def serve_admin_panel() -> HTMLResponse:
+    """Serve the interactive web admin panel."""
+
+    return HTMLResponse(content=_load_admin_panel_html())
 
 
 @app.on_event("shutdown")
