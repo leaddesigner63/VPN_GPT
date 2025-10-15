@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import decimal
 import uuid
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -35,6 +37,28 @@ logger = get_logger("endpoints.payments")
 
 _MORUNE_CLIENT: MoruneClient | None = None
 _MORUNE_CLIENT_SETTINGS: tuple[str, str, str, str] | None = None
+
+
+def _serialise_metadata_value(value: Any) -> Any:
+    """Convert metadata values into JSON-serialisable primitives."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (dt.datetime, dt.date)):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, bytes):
+        import base64
+
+        return base64.b64encode(value).decode("ascii")
+    if isinstance(value, decimal.Decimal):
+        return format(value, "f")
+    if isinstance(value, Mapping):
+        return {str(key): _serialise_metadata_value(val) for key, val in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_serialise_metadata_value(item) for item in value]
+    return str(value)
 
 
 def _get_morune_client() -> MoruneClient | None:
@@ -214,7 +238,10 @@ def _prepare_metadata(
     referrer: str | None,
     metadata: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {str(key): value for key, value in (metadata or {}).items()}
+    payload: dict[str, Any] = {}
+    if metadata:
+        for key, value in metadata.items():
+            payload[str(key)] = _serialise_metadata_value(value)
     payload.update(
         {
             "order_id": payment_id,
