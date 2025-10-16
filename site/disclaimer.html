@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VPN_GPT — Дисклеймер</title>
+  <meta name="description" content="Информация о том, как генерируются ответы сервиса VPN_GPT." />
+  <meta name="theme-color" content="#0b1020" />
+  <style>
+    :root{
+      --bg:#0b1020;
+      --text:#e0e8ff;
+      --muted:#9daed3;
+      --accent:#5ac8fa;
+      --accent-2:#9b8cff;
+      --radius:14px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto; background:#0b1020; color:var(--text); -webkit-font-smoothing:antialiased; line-height:1.6}
+    a{color:var(--accent); text-decoration:none}
+    header{padding:20px 0; position:sticky; top:0; background:rgba(11,16,32,.9); backdrop-filter:blur(8px)}
+    .container{width:min(960px,92%); margin:auto}
+    .nav{display:flex; justify-content:space-between; align-items:center}
+    .brand{font-weight:700; letter-spacing:.3px; display:flex; align-items:center; gap:10px}
+    .dot{width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2))}
+    main{padding:100px 0 80px}
+    h1{font-size:clamp(32px,5vw,48px); font-weight:800; margin-bottom:20px; text-align:center}
+    p{color:var(--muted); font-size:18px; margin-bottom:20px}
+    .card{background:#101730; padding:32px; border-radius:var(--radius); border:1px solid rgba(255,255,255,.06); max-width:680px; margin:0 auto; text-align:left}
+    footer{padding:40px 0; color:var(--muted); font-size:14px; text-align:center; border-top:1px solid rgba(255,255,255,.05)}
+    .footer-links{margin-top:20px}
+    .footer-links a{margin:0 8px; font-size:13px; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <div class="brand"><span class="dot"></span><span>VPN_GPT</span></div>
+      <nav>
+        <a href="index.html#features">Возможности</a>
+        <a href="index.html#how">Как работает</a>
+        <a href="index.html#pricing">Тарифы</a>
+        <a href="index.html#contacts">Контакты</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <div class="card">
+        <h1>Дисклеймер</h1>
+        <p>Все ответы сервиса VPN_GPT формируются с использованием нейросетевых алгоритмов и предназначены исключительно для информационных целей.</p>
+        <p>Получаемые рекомендации не являются официальной позицией, мнением или суждением автора проекта и не могут трактоваться как таковые.</p>
+        <p>Пожалуйста, используйте предоставляемую информацию ответственно и проверяйте критически перед принятием решений.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      © <span id="y"></span> VPN_GPT · AI-помощник по подбору VPN.
+           Клименко А.П. ИНН 614021157002
+      <div class="footer-links">
+        <a href="offer.html" target="_blank">Договор оферты</a> ·
+        <a href="privacy.html" target="_blank">Политика обработки персональных данных</a> ·
+        <a href="refund.html" target="_blank">Условия возврата и отмены платежей</a> ·
+        <a href="license.html" target="_blank">Лицензия на продажу интеллектуальной собственности</a>
+      </div>
+    </div>
+    <script>document.getElementById('y').textContent=new Date().getFullYear()</script>
+  </footer>
+</body>
+</html>
