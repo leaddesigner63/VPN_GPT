@@ -17,12 +17,19 @@ from aiogram.types import (
 )
 
 from config import BOT_TOKEN
+from utils.content_filters import assert_no_geoblocking, sanitize_text
 from utils.qrgen import make_qr
 
 logger = logging.getLogger("vpn_gpt.simple_bot")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+
+def _safe_text(text: str) -> str:
+    sanitized = sanitize_text(text)
+    assert_no_geoblocking(sanitized)
+    return sanitized
 
 
 def _get_trial_days() -> int:
@@ -58,11 +65,11 @@ def _format_days(days: int) -> str:
 
 def _build_trial_message(days: int) -> str:
     if days > 0:
-        return (
+        return _safe_text(
             "Сейчас тестовый период — ключи выдаются бесплатно на "
             f"{_format_days(days)}."
         )
-    return "Сейчас тестовый период — ключи выдаются бесплатно."
+    return _safe_text("Сейчас тестовый период — ключи выдаются бесплатно.")
 
 
 TRIAL_DAYS = _get_trial_days()
@@ -261,7 +268,7 @@ def format_key_info(payload: dict[str, Any], username: str, title: str) -> tuple
         lines.append("🔗 Ссылка для подключения:")
         lines.append(link)
 
-    return "\n".join(lines), link
+    return _safe_text("\n".join(lines)), link
 
 
 async def _api_request(
@@ -337,12 +344,12 @@ async def request_key_info(username: str, chat_id: int | None = None) -> dict:
 async def start(msg: Message):
     await _delete_previous_qr(msg.chat.id)
     trial_message = _build_trial_message(TRIAL_DAYS)
-    await msg.answer(
+    greeting = _safe_text(
         "👋 Привет! Я бот VPN_GPT. "
         f"{trial_message}\n"
-        "\nВыбери действие в меню ниже, и я всё сделаю за тебя.",
-        reply_markup=build_main_menu(),
+        "\nВыбери действие в меню ниже, и я всё сделаю за тебя."
     )
+    await msg.answer(greeting, reply_markup=build_main_menu())
 
 
 @dp.message(Command("buy"))
@@ -366,21 +373,21 @@ async def renew(msg: Message):
 async def handle_issue_key(message: Message, username: str) -> None:
     await _delete_previous_qr(message.chat.id)
     progress = await message.answer(
-        "⏳ Создаю для тебя VPN-ключ…",
+        _safe_text("⏳ Создаю для тебя VPN-ключ…"),
         reply_markup=build_result_markup(),
     )
     try:
         payload = await request_key(username)
     except Exception:
         await progress.edit_text(
-            "⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже.",
+            _safe_text("⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже."),
             reply_markup=build_result_markup(),
         )
         return
 
     if not payload.get("ok"):
         await progress.edit_text(
-            "⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже.",
+            _safe_text("⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже."),
             reply_markup=build_result_markup(),
         )
         return
@@ -397,7 +404,7 @@ async def handle_issue_key(message: Message, username: str) -> None:
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
     progress = await message.answer(
-        "🔎 Проверяю информацию о твоём ключе…",
+        _safe_text("🔎 Проверяю информацию о твоём ключе…"),
         reply_markup=build_result_markup(),
     )
 
@@ -405,14 +412,16 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
         payload = await request_key_info(username, chat_id=chat_id)
     except Exception:
         await progress.edit_text(
-            "⚠️ Не удалось получить информацию о ключе. Попробуй позже.",
+            _safe_text("⚠️ Не удалось получить информацию о ключе. Попробуй позже."),
             reply_markup=build_result_markup(),
         )
         return
 
     if not payload.get("ok"):
         await progress.edit_text(
-            "ℹ️ Активный ключ не найден. Нажми кнопку \"Получить новый ключ\" в меню.",
+            _safe_text(
+                "ℹ️ Активный ключ не найден. Нажми кнопку \"Получить новый ключ\" в меню."
+            ),
             reply_markup=build_result_markup(),
         )
         return
@@ -429,7 +438,7 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
 async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
     progress = await message.answer(
-        "♻️ Продлеваю срок действия твоего ключа…",
+        _safe_text("♻️ Продлеваю срок действия твоего ключа…"),
         reply_markup=build_result_markup(),
     )
 
@@ -437,14 +446,17 @@ async def handle_renew_key(message: Message, username: str, chat_id: int) -> Non
         renew_payload = await renew_key(username)
     except Exception:
         await progress.edit_text(
-            "⚠️ Не удалось продлить доступ. Попробуй ещё раз позже.",
+            _safe_text("⚠️ Не удалось продлить доступ. Попробуй ещё раз позже."),
             reply_markup=build_result_markup(),
         )
         return
 
     if not renew_payload.get("ok"):
         detail = renew_payload.get("detail") or "Не удалось продлить доступ."
-        await progress.edit_text(f"⚠️ {detail}", reply_markup=build_result_markup())
+        await progress.edit_text(
+            _safe_text(f"⚠️ {detail}"),
+            reply_markup=build_result_markup(),
+        )
         return
 
     try:
@@ -460,7 +472,7 @@ async def handle_renew_key(message: Message, username: str, chat_id: int) -> Non
         if expires:
             lines.append(f"Новая дата окончания: {expires}")
         link = None
-        text = "\n".join(lines)
+        text = _safe_text("\n".join(lines))
 
     await progress.edit_text(text, reply_markup=build_result_markup(link))
 
@@ -497,7 +509,7 @@ async def show_qr_callback(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     link = await _qr_links.get(chat_id)
     if not link:
-        await callback.answer("QR недоступен", show_alert=True)
+        await callback.answer(_safe_text("QR недоступен"), show_alert=True)
         return
 
     await _delete_previous_qr(chat_id)
@@ -505,7 +517,7 @@ async def show_qr_callback(callback: CallbackQuery):
     qr = make_qr(link)
     qr_message = await callback.message.answer_photo(
         BufferedInputFile(qr.getvalue(), filename="vpn_key.png"),
-        caption="📱 Отсканируй QR-код для быстрого подключения",
+        caption=_safe_text("📱 Отсканируй QR-код для быстрого подключения"),
     )
     normalized_link = link.strip()
     if normalized_link:
@@ -530,7 +542,7 @@ async def show_menu(callback: CallbackQuery):
         return
     await _delete_previous_qr(callback.message.chat.id)
     await callback.message.answer(
-        "Выбери нужное действие:",
+        _safe_text("Выбери нужное действие:"),
         reply_markup=build_main_menu(),
     )
 
@@ -541,7 +553,7 @@ async def main():
         await bot.set_chat_menu_button(MenuButtonDefault())
     except Exception:
         # Для простого бота ограничимся сообщением в stdout.
-        print("⚠️ Не удалось очистить меню команд бота", flush=True)
+        print(_safe_text("⚠️ Не удалось очистить меню команд бота"), flush=True)
     await dp.start_polling(bot)
 
 

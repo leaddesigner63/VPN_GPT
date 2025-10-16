@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 
 from api.utils import db
 from api.utils.logging import get_logger
+from utils.content_filters import assert_no_geoblocking, sanitize_text
 
 router = APIRouter()
 
@@ -42,9 +43,12 @@ async def send_message(request: Request):
         logger.error("requests library is not installed")
         return {"ok": False, "error": "requests_not_available"}
 
+    safe_text = sanitize_text(text)
+    assert_no_geoblocking(safe_text)
+
     resp = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={"chat_id": chat_id, "text": text},
+        json={"chat_id": chat_id, "text": safe_text},
         timeout=10,
     )
 
