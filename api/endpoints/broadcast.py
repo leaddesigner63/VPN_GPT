@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from api.utils import db
 from api.utils.logging import get_logger
+from utils.content_filters import assert_no_geoblocking, sanitize_text
 
 router = APIRouter()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -33,13 +34,16 @@ async def notify_broadcast(payload: BroadcastRequest) -> dict[str, Any]:
         logger.info("No Telegram users registered for broadcast")
         return {"ok": True, "sent": 0, "total": 0}
 
+    safe_text = sanitize_text(text)
+    assert_no_geoblocking(safe_text)
+
     logger.info("Starting broadcast to Telegram users", extra={"count": len(targets)})
     sent = 0
     for target in targets:
         chat_id = target["chat_id"]
         resp = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json={"chat_id": chat_id, "text": safe_text},
             timeout=10,
         )
         if resp.status_code == 200:

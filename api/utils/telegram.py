@@ -8,6 +8,7 @@ import os
 import httpx
 
 from api.utils.logging import get_logger
+from utils.content_filters import assert_no_geoblocking, sanitize_text
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE = os.getenv("BASE_BOT_URL", "https://api.telegram.org")
@@ -18,8 +19,10 @@ def _url(method: str) -> str:
 
 async def send_message(chat_id: int | str, text: str, parse_mode: str | None = None):
     logger.info("Sending Telegram message", extra={"chat_id": chat_id})
+    safe_text = sanitize_text(text)
+    assert_no_geoblocking(safe_text)
     async with httpx.AsyncClient(timeout=30) as client:
-        data = {"chat_id": chat_id, "text": text}
+        data = {"chat_id": chat_id, "text": safe_text}
         if parse_mode:
             data["parse_mode"] = parse_mode
         r = await client.post(_url("sendMessage"), json=data)
