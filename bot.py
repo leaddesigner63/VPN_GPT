@@ -827,7 +827,13 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     link = payload.get("link")
     text = (
         "🎁 Готово! Твой тестовый доступ активирован."\
-        + "\n\n" + format_key_message(payload)
+        + "\n\n"
+        + format_key_message(payload)
+        + "\n\n"
+        + "ℹ️ Что делать дальше:\n"
+        + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
+        + "2️⃣ Вставь её в приложение для VLESS (v2rayNG, Shadowrocket, NapsternetV и т.п.).\n"
+        + "3️⃣ Сохрани профиль и включи VPN."
     )
     await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
