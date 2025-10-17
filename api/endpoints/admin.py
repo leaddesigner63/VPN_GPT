@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException
@@ -33,7 +33,7 @@ def backup_db(
     )
 ):
     require_admin(x_admin_token)
-    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     backup_dir = Path(os.getenv("BACKUP_DIR", DB_PATH.parent))
     backup_dir.mkdir(parents=True, exist_ok=True)
     dest = backup_dir / f"db-backup-{ts}.sqlite3"

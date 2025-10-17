@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence, TypeVar
 
@@ -252,7 +252,13 @@ def init_db(*, db_path: Path | str | None = None) -> None:
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow().replace(microsecond=0)
+    return datetime.now(UTC).replace(microsecond=0)
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
@@ -766,7 +772,7 @@ def list_expiring_keys(*, within_days: int = 3) -> list[dict]:
     for row in rows:
         expires_raw = row["expires_at"]
         try:
-            expires_dt = datetime.fromisoformat(expires_raw)
+            expires_dt = _ensure_utc(datetime.fromisoformat(expires_raw))
         except Exception:  # pragma: no cover - defensive
             logger.warning(
                 "Failed to parse expiry",
@@ -809,7 +815,7 @@ def list_expired_keys() -> list[dict]:
     for row in rows:
         expires_raw = row["expires_at"]
         try:
-            expires_dt = datetime.fromisoformat(expires_raw)
+            expires_dt = _ensure_utc(datetime.fromisoformat(expires_raw))
         except Exception:  # pragma: no cover - defensive
             logger.warning(
                 "Failed to parse expiry for expired key",
@@ -1082,7 +1088,7 @@ def extend_active_key(username: str, *, days: int) -> dict | None:
     key = get_active_key(username)
     now = _utcnow()
     if key:
-        current_expiry = datetime.fromisoformat(key["expires_at"])
+        current_expiry = _ensure_utc(datetime.fromisoformat(key["expires_at"]))
         if current_expiry < now:
             current_expiry = now
         new_expiry = current_expiry + timedelta(days=days)

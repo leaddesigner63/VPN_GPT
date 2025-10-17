@@ -89,7 +89,7 @@ def issue_key(request: IssueKeyRequest, _: None = Depends(require_service_token)
         logger.info("User already consumed trial", extra={"username": username})
         return _json_error("trial_already_used", status_code=status.HTTP_409_CONFLICT)
 
-    expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=config.TRIAL_DAYS)
+    expires_at = dt.datetime.now(dt.UTC).replace(microsecond=0) + dt.timedelta(days=config.TRIAL_DAYS)
     uuid_value = str(uuid.uuid4())
     label = request.label or f"VPN_GPT_{username}"
     link = build_vless_link(uuid_value, label)
@@ -134,7 +134,7 @@ def renew_key(request: RenewKeyRequest, _: None = Depends(require_service_token)
     uuid_value = str(uuid.uuid4())
     label = request.label or f"VPN_GPT_{username}"
     link = build_vless_link(uuid_value, label)
-    expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=duration_days)
+    expires_at = dt.datetime.now(dt.UTC).replace(microsecond=0) + dt.timedelta(days=duration_days)
     payload = db.create_vpn_key(
         username=username,
         chat_id=request.chat_id,

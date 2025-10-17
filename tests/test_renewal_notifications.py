@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 def _prepare_modules(tmp_path, monkeypatch):
@@ -31,7 +31,7 @@ def test_scheduler_sends_three_notifications(tmp_path, monkeypatch):
     db_module, notifications = _prepare_modules(tmp_path, monkeypatch)
 
     db_module.schedule_renewal_notification(
-        "uuid-123", chat_id=555, username="alice", expires_at=datetime.utcnow().isoformat()
+        "uuid-123", chat_id=555, username="alice", expires_at=datetime.now(UTC).isoformat()
     )
 
     calls: list[tuple[int, str]] = []
@@ -89,7 +89,7 @@ def test_scheduler_recovers_from_generation_error(tmp_path, monkeypatch):
     db_module, notifications = _prepare_modules(tmp_path, monkeypatch)
 
     db_module.schedule_renewal_notification(
-        "uuid-err", chat_id=777, username="bob", expires_at=datetime.utcnow().isoformat()
+        "uuid-err", chat_id=777, username="bob", expires_at=datetime.now(UTC).isoformat()
     )
 
     class FailingGenerator:
@@ -115,4 +115,4 @@ def test_scheduler_recovers_from_generation_error(tmp_path, monkeypatch):
     assert "failed to craft text" in (record["last_error"] or "")
 
     next_attempt = datetime.fromisoformat(record["next_attempt_at"])
-    assert next_attempt > datetime.utcnow()
+    assert next_attempt > datetime.now(UTC)
