@@ -746,19 +746,15 @@ async def fetch_referral_stats(username: str) -> dict[str, Any]:
 
 def format_key_message(payload: dict[str, Any]) -> str:
     expires = payload.get("expires_at", "—")
-    trial = "да" if payload.get("trial") else "нет"
-    status = "активен" if payload.get("active") else "неактивен"
-    parts = [
-        "<b>VPN-ключ</b>",
-        f"UUID: <code>{payload.get('uuid')}</code>",
-        f"Статус: {status}",
-        f"Триал: {trial}",
-        f"Действует до: {expires}",
-    ]
+    parts = ["<b>VPN-ключ</b>"]
+
+    if expires:
+        parts.extend(["", f"Действует до: {expires}"])
+
     link = payload.get("link")
     if link:
-        parts.append("")
-        parts.append(f"<code>{link}</code>")
+        parts.extend(["", f"<code>{link}</code>"])
+
     return "\n".join(parts)
 
 
@@ -891,7 +887,7 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         + "\n\n"
         + "ℹ️ Что делать дальше:\n"
         + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
-        + "2️⃣ Вставь её в приложение для VLESS (например, v2rayNG, Stash и т.п.).\n"
+        + "2️⃣ Вставь её в приложение (список ниже).\n"
         + "3️⃣ Сохрани профиль и включи VPN.\n\n"
         + "📱 <b>Рекомендуемые приложения:</b>\n"
         + _format_vless_clients_recommendations()
