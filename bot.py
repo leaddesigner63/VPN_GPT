@@ -833,7 +833,12 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         + "ℹ️ Что делать дальше:\n"
         + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
         + "2️⃣ Вставь её в приложение для VLESS (v2rayNG, Shadowrocket, NapsternetV и т.п.).\n"
-        + "3️⃣ Сохрани профиль и включи VPN."
+        + "3️⃣ Сохрани профиль и включи VPN.\n\n"
+        + "📱 <b>Рекомендуемые приложения:</b>\n"
+        + "• Android — <a href=\"https://play.google.com/store/apps/details?id=com.v2ray.ang\">v2rayNG</a>.\n"
+        + "• iOS — <a href=\"https://apps.apple.com/app/shadowrocket/id932747118\">Shadowrocket</a>.\n"
+        + "• Windows/macOS — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> / "
+        + "<a href=\"https://apps.apple.com/app/stash-stash/id1596063349\">Stash</a>."
     )
     await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
