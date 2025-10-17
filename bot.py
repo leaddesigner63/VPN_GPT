@@ -6,7 +6,7 @@ import logging
 import os
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Deque, Dict
+from typing import Any, Deque, Dict, Sequence
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -173,6 +173,11 @@ def _format_vless_clients_recommendations(indent: str = "") -> str:
 
 
 _VLESS_CLIENTS_RECOMMENDATIONS = _load_vless_clients_recommendations()
+_VLESS_CLIENTS_SYSTEM_PROMPT = (
+    "Список рекомендованных приложений для подключения по протоколу VLESS. "
+    "Выбирай варианты, которые подходят под устройство пользователя, и не перечисляй лишние.\n"
+    f"{_VLESS_CLIENTS_RECOMMENDATIONS}"
+)
 
 
 def _parse_plans(raw: str) -> Dict[str, int]:
@@ -466,18 +471,30 @@ def _remember_exchange(chat_id: int, user_text: str, reply: str) -> None:
     history.append({"role": "assistant", "content": reply})
 
 
-def _build_messages(chat_id: int, user_text: str) -> list[dict[str, str]]:
+def _build_messages(
+    chat_id: int, user_text: str, *, extra_system_prompts: Sequence[str] | None = None
+) -> list[dict[str, str]]:
     history = list(_get_history(chat_id))
     messages: list[dict[str, str]] = []
-    for prompt in SYSTEM_PROMPTS:
+    system_prompts = list(SYSTEM_PROMPTS)
+    if extra_system_prompts:
+        for prompt in extra_system_prompts:
+            cleaned = prompt.strip()
+            if cleaned:
+                system_prompts.append(cleaned)
+    for prompt in system_prompts:
         messages.append({"role": "system", "content": prompt})
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
     return messages
 
 
-async def ask_gpt(chat_id: int, user_text: str) -> str:
-    messages = _build_messages(chat_id, user_text)
+async def ask_gpt(
+    chat_id: int, user_text: str, *, extra_system_prompts: Sequence[str] | None = None
+) -> str:
+    messages = _build_messages(
+        chat_id, user_text, extra_system_prompts=extra_system_prompts
+    )
     completion = await asyncio.get_event_loop().run_in_executor(
         None,
         lambda: client.chat.completions.create(model=GPT_MODEL, messages=messages),
@@ -748,13 +765,12 @@ def build_ai_instruction_prompt(
 ) -> str:
     plan_parts = [f"{code.upper()} — {price} ₽" for code, price in plans.items()]
     return (
-        "Ты помогаешь пользователю настроить VPN. Сформируй короткую памятку из 3-4 пунктов: "
-        "1) какую программу установить под устройство, 2) как импортировать ссылку VLESS, 3) как оплатить тариф. "
-        "Пиши дружелюбно, без жаргона, используй эмодзи экономно.\n"
+        "Ты помогаешь пользователю настроить VPN. Сформируй лаконичную памятку из трёх пунктов: "
+        "1) выбери приложение под устройство, 2) опиши импорт VLESS-ссылки, 3) подскажи оплату тарифа. "
+        "Пиши дружелюбно и понятно, избегай жаргона и длинных вступлений.\n"
         f"Устройство: {device}.\nРегион использования: {region}.\nОсобые пожелания: {preferences}.\n"
         f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}.\n"
-        "Опирайся на список рекомендованных приложений ниже, выбирай подходящее под устройство пользователя.\n"
-        f"Рекомендации:\n{_VLESS_CLIENTS_RECOMMENDATIONS}"
+        "Отвечай в формате списка с короткими предложениями."
     )
 
 
@@ -1134,7 +1150,11 @@ async def process_ai_preferences(message: Message, state: FSMContext) -> None:
     link = trial_payload.get("link") if trial_payload else None
 
     prompt = build_ai_instruction_prompt(device, region, preferences, TRIAL_DAYS, PLANS)
-    ai_message = await ask_gpt(message.chat.id, prompt)
+    ai_message = await ask_gpt(
+        message.chat.id,
+        prompt,
+        extra_system_prompts=[_VLESS_CLIENTS_SYSTEM_PROMPT],
+    )
 
     response_parts = ["🧠 <b>Твой персональный план</b>", ai_message.strip()]
     if trial_payload:
