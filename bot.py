@@ -129,11 +129,14 @@ API_TIMEOUT = _get_float_env("VPN_API_TIMEOUT", 15.0)
 API_MAX_RETRIES = max(1, _get_int_env("VPN_API_MAX_RETRIES", 3))
 API_RETRY_BASE_DELAY = _get_float_env("VPN_API_RETRY_BASE_DELAY", 0.5)
 
-ANDROID_OFFICIAL_APP_LINK = "https://play.google.com/store/apps/details?id=com.v2ray.ang"
-IOS_OFFICIAL_APP_LINK = "https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
-WINDOWS_OFFICIAL_APP_LINK = "https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H"
-MAC_OFFICIAL_APP_LINK = "https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
-LINUX_CLIENT_LINK = "https://github.com/v2rayA/v2rayA"
+_VLESS_CLIENTS_RECOMMENDATIONS_PATH = Path(__file__).resolve().parent / "VLESS_clients_recommendations_ru.txt"
+_DEFAULT_VLESS_CLIENTS_RECOMMENDATIONS = (
+    "• Android — v2rayNG (Google Play): https://play.google.com/store/apps/details?id=com.v2ray.ang\n"
+    "• iOS — Stash (App Store): https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\n"
+    "• Windows — v2rayN (Microsoft Store): https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H\n"
+    "• macOS — Stash (Mac App Store): https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\n"
+    "• Linux — v2rayA: https://github.com/v2rayA/v2rayA"
+)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
@@ -142,6 +145,34 @@ if not GPT_API_KEY:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("vpn_gpt.bot")
+
+
+def _load_vless_clients_recommendations() -> str:
+    try:
+        content = _VLESS_CLIENTS_RECOMMENDATIONS_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        logger.warning(
+            "VLESS clients recommendations file is missing",
+            extra={"path": str(_VLESS_CLIENTS_RECOMMENDATIONS_PATH)},
+        )
+        return _DEFAULT_VLESS_CLIENTS_RECOMMENDATIONS
+
+    if not content:
+        logger.warning(
+            "VLESS clients recommendations file is empty",
+            extra={"path": str(_VLESS_CLIENTS_RECOMMENDATIONS_PATH)},
+        )
+        return _DEFAULT_VLESS_CLIENTS_RECOMMENDATIONS
+
+    return content
+
+
+def _format_vless_clients_recommendations(indent: str = "") -> str:
+    lines = _VLESS_CLIENTS_RECOMMENDATIONS.splitlines()
+    return "\n".join(f"{indent}{line}" if line else "" for line in lines)
+
+
+_VLESS_CLIENTS_RECOMMENDATIONS = _load_vless_clients_recommendations()
 
 
 def _parse_plans(raw: str) -> Dict[str, int]:
@@ -721,7 +752,9 @@ def build_ai_instruction_prompt(
         "1) какую программу установить под устройство, 2) как импортировать ссылку VLESS, 3) как оплатить тариф. "
         "Пиши дружелюбно, без жаргона, используй эмодзи экономно.\n"
         f"Устройство: {device}.\nРегион использования: {region}.\nОсобые пожелания: {preferences}.\n"
-        f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}."
+        f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}.\n"
+        "Опирайся на список рекомендованных приложений ниже, выбирай подходящее под устройство пользователя.\n"
+        f"Рекомендации:\n{_VLESS_CLIENTS_RECOMMENDATIONS}"
     )
 
 
@@ -739,14 +772,11 @@ def build_ai_keyboard(link: str | None, username: str, chat_id: int, ref: str | 
 
 
 def build_help_text() -> str:
+    recommendations = _format_vless_clients_recommendations("   ")
     return (
         "ℹ️ <b>Нужна помощь?</b>\n"
-        "1. Установи приложение из официального магазина под своё устройство:\n"
-        f"   • Android — <a href=\"{ANDROID_OFFICIAL_APP_LINK}\">v2rayNG</a> (Google Play).\n"
-        f"   • iOS — <a href=\"{IOS_OFFICIAL_APP_LINK}\">Stash</a> (App Store).\n"
-        f"   • Windows — <a href=\"{WINDOWS_OFFICIAL_APP_LINK}\">v2rayN</a> (Microsoft Store).\n"
-        f"   • macOS — <a href=\"{MAC_OFFICIAL_APP_LINK}\">Stash</a> (Mac App Store).\n"
-        f"   • Linux — <a href=\"{LINUX_CLIENT_LINK}\">v2rayA</a>.\n"
+        "1. Выбери и установи приложение из списка рекомендаций ниже:\n"
+        f"{recommendations}\n"
         "2. Импортируй ссылку VLESS из карточки ключа.\n"
         "3. Если что-то не получается – пиши в чат прямо здесь и сейчас. Я всегда на связи 😉"
     )
@@ -846,11 +876,7 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         + "2️⃣ Вставь её в приложение для VLESS (например, v2rayNG, Stash и т.п.).\n"
         + "3️⃣ Сохрани профиль и включи VPN.\n\n"
         + "📱 <b>Рекомендуемые приложения:</b>\n"
-        + f"• Android — <a href=\"{ANDROID_OFFICIAL_APP_LINK}\">v2rayNG</a> (Google Play).\n"
-        + f"• iOS — <a href=\"{IOS_OFFICIAL_APP_LINK}\">Stash</a> (App Store).\n"
-        + f"• Windows — <a href=\"{WINDOWS_OFFICIAL_APP_LINK}\">v2rayN</a> (Microsoft Store).\n"
-        + f"• macOS — <a href=\"{MAC_OFFICIAL_APP_LINK}\">Stash</a> (Mac App Store).\n"
-        + f"• Linux — <a href=\"{LINUX_CLIENT_LINK}\">v2rayA</a>."
+        + _format_vless_clients_recommendations()
     )
     await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
