@@ -939,14 +939,16 @@ async def handle_my_keys(call: CallbackQuery) -> None:
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     keys = await fetch_keys(username)
-    if not keys:
-        text = "Пока что ключей нет. Нажми «Быстрый старт», чтобы получить тестовый доступ!"
+    active_keys = [key for key in keys if key.get("active")]
+    if not active_keys:
+        text = (
+            "Пока что активных ключей нет. Нажми «Быстрый старт», чтобы получить тестовый доступ!"
+        )
     else:
         parts = ["🔑 <b>Твои ключи</b>"]
-        for idx, key in enumerate(keys, start=1):
-            status = "✅ активен" if key.get("active") else "⚠️ неактивен"
+        for idx, key in enumerate(active_keys, start=1):
             parts.append(
-                f"\n<b>#{idx}</b> · {status}\nДействует до: {key.get('expires_at', '—')}"
+                f"\n<b>#{idx}</b> · ✅ активен\nДействует до: {key.get('expires_at', '—')}"
             )
             if key.get("link"):
                 parts.append(f"<code>{key['link']}</code>")
