@@ -129,6 +129,12 @@ API_TIMEOUT = _get_float_env("VPN_API_TIMEOUT", 15.0)
 API_MAX_RETRIES = max(1, _get_int_env("VPN_API_MAX_RETRIES", 3))
 API_RETRY_BASE_DELAY = _get_float_env("VPN_API_RETRY_BASE_DELAY", 0.5)
 
+ANDROID_OFFICIAL_APP_LINK = "https://play.google.com/store/apps/details?id=com.v2ray.ang"
+IOS_OFFICIAL_APP_LINK = "https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
+WINDOWS_OFFICIAL_APP_LINK = "https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H"
+MAC_OFFICIAL_APP_LINK = "https://apps.apple.com/app/stash-rule-based-proxy/id1596063349"
+LINUX_CLIENT_LINK = "https://github.com/v2rayA/v2rayA"
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not configured")
 if not GPT_API_KEY:
@@ -735,7 +741,12 @@ def build_ai_keyboard(link: str | None, username: str, chat_id: int, ref: str | 
 def build_help_text() -> str:
     return (
         "ℹ️ <b>Нужна помощь?</b>\n"
-        "1. Установи V2Box на iOS/Android или Nekobox на Windows/macOS.\n"
+        "1. Установи приложение из официального магазина под своё устройство:\n"
+        f"   • Android — <a href=\"{ANDROID_OFFICIAL_APP_LINK}\">v2rayNG</a> (Google Play).\n"
+        f"   • iOS — <a href=\"{IOS_OFFICIAL_APP_LINK}\">Stash</a> (App Store).\n"
+        f"   • Windows — <a href=\"{WINDOWS_OFFICIAL_APP_LINK}\">v2rayN</a> (Microsoft Store).\n"
+        f"   • macOS — <a href=\"{MAC_OFFICIAL_APP_LINK}\">Stash</a> (Mac App Store).\n"
+        f"   • Linux — <a href=\"{LINUX_CLIENT_LINK}\">v2rayA</a>.\n"
         "2. Импортируй ссылку VLESS из карточки ключа.\n"
         "3. Если что-то не получается – пиши в чат прямо здесь и сейчас. Я всегда на связи 😉"
     )
@@ -832,14 +843,14 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         + "\n\n"
         + "ℹ️ Что делать дальше:\n"
         + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
-        + "2️⃣ Вставь её в приложение для VLESS (V2Box, v2rayN и т.п.).\n"
+        + "2️⃣ Вставь её в приложение для VLESS (например, v2rayNG, Stash и т.п.).\n"
         + "3️⃣ Сохрани профиль и включи VPN.\n\n"
         + "📱 <b>Рекомендуемые приложения:</b>\n"
-        + "• Android — <a href=\"https://www.v2box.app\">V2Box</a> (если Google Play недоступен, скачай APK с сайта).\n"
-        + "• iOS — <a href=\"https://apps.apple.com/app/v2box-v2ray-client/id6446814690\">V2Box</a>.\n"
-        + "• Windows — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> (бесплатно).\n"
-        + "• Linux — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> через Wine или <a href=\"https://github.com/v2rayA/v2rayA\">v2rayA</a>.\n"
-        + "• macOS — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> через Wine или <a href=\"https://github.com/yanue/V2rayU\">V2RayU</a>."
+        + f"• Android — <a href=\"{ANDROID_OFFICIAL_APP_LINK}\">v2rayNG</a> (Google Play).\n"
+        + f"• iOS — <a href=\"{IOS_OFFICIAL_APP_LINK}\">Stash</a> (App Store).\n"
+        + f"• Windows — <a href=\"{WINDOWS_OFFICIAL_APP_LINK}\">v2rayN</a> (Microsoft Store).\n"
+        + f"• macOS — <a href=\"{MAC_OFFICIAL_APP_LINK}\">Stash</a> (Mac App Store).\n"
+        + f"• Linux — <a href=\"{LINUX_CLIENT_LINK}\">v2rayA</a>."
     )
     await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
