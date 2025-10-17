@@ -1,34 +1,5 @@
-Бесплатные приложения для работы с VLESS (без Reality)
-
-Эти клиенты поддерживают импорт vless:// ссылок и QR-кодов. Для Android и ChromeOS приоритет — Google Play; если приложение недоступно, используйте официальные релизы GitHub.
-
-iOS / iPadOS / macOS (универсальное):
-
-• V2Box — универсальный клиент, поддерживает VLESS (включая Vision); импорт по vless:// и QR; бесплатно (на iOS возможна реклама) — App Store: https://apps.apple.com/app/v2box-v2ray-client/id6446814690
-
-Android (и Chromebook с Google Play):
-
-• V2Box — клиент с поддержкой VLESS; простой импорт по ссылке/QR — Google Play: https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box
-• Hiddify Next — на базе sing-box; поддерживает VLESS и подписки; без рекламы — Google Play: https://play.google.com/store/apps/details?id=app.hiddify.com
-• v2rayNG — классический клиент; в Google Play часто недоступен — берите APK с релизов — GitHub Releases: https://github.com/2dust/v2rayNG/releases
-
-Windows:
-
-• v2rayN — самый популярный GUI-клиент; поддерживает Xray/sing-box и VLESS; простой импорт ссылок/QR — GitHub Releases: https://github.com/2dust/v2rayN/releases
-• Nekoray — кроссплатформенный GUI на sing-box (Windows/Linux) — GitHub Releases: https://github.com/Matsuridayo/nekoray/releases
-
-macOS:
-
-• V2Box — универсальное приложение из App Store для Mac — App Store: https://apps.apple.com/app/v2box-v2ray-client/id6446814690
-• V2RayU — бесплатный GUI-клиент; скачивается с GitHub релизов — GitHub Releases: https://github.com/yanue/V2rayU/releases
-• V2RayXS — лёгкий GUI для xray-core (VLESS) — GitHub Releases: https://github.com/tzmax/v2rayXS/releases
-
-Linux:
-
-• v2rayN (кроссплатформенный билд) — официальные сборки с поддержкой Linux (Avalonia GUI) — GitHub Releases: https://github.com/2dust/v2rayN/releases
-• Nekoray — удобный GUI на базе sing-box/Xray — GitHub Releases: https://github.com/Matsuridayo/nekoray/releases
-
-ChromeOS:
-
-• Hiddify Next — устанавливается из Google Play (Android-режим ChromeOS) — Google Play: https://play.google.com/store/apps/details?id=app.hiddify.com
-• V2Box — альтернатива из Google Play (Android-режим ChromeOS) — Google Play: https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box
+• Android — <a href="https://play.google.com/store/apps/details?id=com.v2ray.ang">v2rayNG</a>
+• iOS — <a href="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349">Stash</a>
+• Windows — <a href="https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H">v2rayN</a>
+• macOS — <a href="https://apps.apple.com/app/stash-rule-based-proxy/id1596063349">Stash</a>
+• Linux — <a href="https://github.com/v2rayA/v2rayA">v2rayA</a>

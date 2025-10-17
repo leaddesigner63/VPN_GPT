@@ -131,11 +131,11 @@ API_RETRY_BASE_DELAY = _get_float_env("VPN_API_RETRY_BASE_DELAY", 0.5)
 
 _VLESS_CLIENTS_RECOMMENDATIONS_PATH = Path(__file__).resolve().parent / "VLESS_clients_recommendations_ru.txt"
 _DEFAULT_VLESS_CLIENTS_RECOMMENDATIONS = (
-    "• Android — v2rayNG (Google Play): https://play.google.com/store/apps/details?id=com.v2ray.ang\n"
-    "• iOS — Stash (App Store): https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\n"
-    "• Windows — v2rayN (Microsoft Store): https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H\n"
-    "• macOS — Stash (Mac App Store): https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\n"
-    "• Linux — v2rayA: https://github.com/v2rayA/v2rayA"
+    "• Android — <a href=\"https://play.google.com/store/apps/details?id=com.v2ray.ang\">v2rayNG</a>\n"
+    "• iOS — <a href=\"https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\">Stash</a>\n"
+    "• Windows — <a href=\"https://apps.microsoft.com/store/detail/v2rayn/9NKBQF3F8K6H\">v2rayN</a>\n"
+    "• macOS — <a href=\"https://apps.apple.com/app/stash-rule-based-proxy/id1596063349\">Stash</a>\n"
+    "• Linux — <a href=\"https://github.com/v2rayA/v2rayA\">v2rayA</a>"
 )
 
 if not BOT_TOKEN:
@@ -175,7 +175,9 @@ def _format_vless_clients_recommendations(indent: str = "") -> str:
 _VLESS_CLIENTS_RECOMMENDATIONS = _load_vless_clients_recommendations()
 _VLESS_CLIENTS_SYSTEM_PROMPT = (
     "Список рекомендованных приложений для подключения по протоколу VLESS. "
-    "Выбирай варианты, которые подходят под устройство пользователя, и не перечисляй лишние.\n"
+    "Выбирай варианты, которые подходят под устройство пользователя, и не перечисляй лишние. "
+    "Для каждой операционной системы используй не более одного приложения, не добавляй описания и комментарии. "
+    "Применяй формат «• ОС — <a href=\"URL\">Название</a>» без отображения голых ссылок.\n"
     f"{_VLESS_CLIENTS_RECOMMENDATIONS}"
 )
 
