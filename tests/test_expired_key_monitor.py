@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import importlib
@@ -17,7 +17,7 @@ def test_expired_key_monitor_deactivates_and_syncs(tmp_path, monkeypatch):
     importlib.reload(db_module)
     db_module.init_db()
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     expired_uuid = "expired-key"
     active_uuid = "active-key"
 

@@ -184,7 +184,7 @@ def _ensure_subscription(username: str, chat_id: int | None, days: int) -> dict:
     if existing:
         return existing
 
-    expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=days)
+    expires_at = dt.datetime.now(dt.UTC).replace(microsecond=0) + dt.timedelta(days=days)
     uuid_value = str(uuid.uuid4())
     label = f"VPN_GPT_{username}"
     link = build_vless_link(uuid_value, label)
@@ -212,7 +212,7 @@ def _award_referral_bonus(username: str) -> None:
     if bonus_key is None:
         referrer_user = db.get_user(referrer)
         chat_id = referrer_user.get("chat_id") if referrer_user else None
-        expires_at = dt.datetime.utcnow().replace(microsecond=0) + dt.timedelta(days=bonus_days)
+        expires_at = dt.datetime.now(dt.UTC).replace(microsecond=0) + dt.timedelta(days=bonus_days)
         uuid_value = str(uuid.uuid4())
         label = f"VPN_GPT_{referrer}"
         link = build_vless_link(uuid_value, label)
@@ -406,7 +406,7 @@ def _finalise_payment(
     updated = db.update_payment_status(
         payment["payment_id"],
         status="paid",
-        paid_at=paid_at or dt.datetime.utcnow().replace(microsecond=0),
+        paid_at=paid_at or dt.datetime.now(dt.UTC).replace(microsecond=0),
         key_uuid=subscription["uuid"],
         provider_status=provider_status,
         payment_url=payment_url,
@@ -515,7 +515,7 @@ def confirm_payment(request: ConfirmPaymentRequest, _: None = Depends(require_se
     paid_at = (
         dt.datetime.fromisoformat(request.paid_at)
         if request.paid_at
-        else dt.datetime.utcnow().replace(microsecond=0)
+        else dt.datetime.now(dt.UTC).replace(microsecond=0)
     )
     currency = (request.currency or payment.get("currency") or MORUNE_DEFAULT_CURRENCY).upper()
 

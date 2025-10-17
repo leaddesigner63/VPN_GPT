@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Iterable, List, Tuple
 
 from api.utils import db as core_db
@@ -35,7 +35,7 @@ def save_message(
     reply: str,
 ) -> None:
     """Persist a message/reply exchange for conversational history."""
-    created_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    created_at = datetime.now(UTC).replace(microsecond=0).isoformat()
     with core_db.connect() as conn:
         conn.execute(
             """
@@ -64,8 +64,12 @@ def get_last_messages(user_id: int, limit: int = 5) -> List[Tuple[str, str]]:
 
 def _coerce_datetime(value: datetime | str) -> datetime:
     if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value)
+        result = value
+    else:
+        result = datetime.fromisoformat(value)
+    if result.tzinfo is None:
+        return result.replace(tzinfo=UTC)
+    return result.astimezone(UTC)
 
 
 def save_vpn_key(
@@ -144,10 +148,16 @@ def renew_vpn_key(user_id: int, extend_days: int = 30) -> datetime | None:
     try:
         current_expiry = datetime.fromisoformat(row["expires_at"])
     except Exception:
-        current_expiry = datetime.utcnow()
+        current_expiry = datetime.now(UTC)
+    else:
+        if current_expiry.tzinfo is None:
+            current_expiry = current_expiry.replace(tzinfo=UTC)
+        else:
+            current_expiry = current_expiry.astimezone(UTC)
 
-    if current_expiry < datetime.utcnow():
-        current_expiry = datetime.utcnow()
+    now = datetime.now(UTC)
+    if current_expiry < now:
+        current_expiry = now
 
     new_expiry = current_expiry + timedelta(days=extend_days)
     core_db.update_key_expiry(row["uuid"], new_expiry)
@@ -156,7 +166,7 @@ def renew_vpn_key(user_id: int, extend_days: int = 30) -> datetime | None:
 
 def get_expired_keys() -> List[Tuple[int | None, str, str]]:
     """Return all active keys that are already past their expiry date."""
-    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    now_iso = datetime.now(UTC).replace(microsecond=0).isoformat()
     with core_db.connect() as conn:
         cur = conn.execute(
             """

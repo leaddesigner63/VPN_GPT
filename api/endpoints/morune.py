@@ -240,7 +240,7 @@ async def morune_paid(request: Request) -> WebhookResponse:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown_plan")
 
     days = plan_duration(plan_code)
-    now = dt.datetime.utcnow().replace(microsecond=0)
+    now = dt.datetime.now(dt.UTC).replace(microsecond=0)
 
     extended = db.extend_active_key(username, days=days)
     if extended:
