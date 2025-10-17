@@ -832,13 +832,14 @@ async def handle_quick_start(call: CallbackQuery) -> None:
         + "\n\n"
         + "ℹ️ Что делать дальше:\n"
         + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
-        + "2️⃣ Вставь её в приложение для VLESS (v2rayNG, Shadowrocket, NapsternetV и т.п.).\n"
+        + "2️⃣ Вставь её в приложение для VLESS (V2Box, v2rayN и т.п.).\n"
         + "3️⃣ Сохрани профиль и включи VPN.\n\n"
         + "📱 <b>Рекомендуемые приложения:</b>\n"
-        + "• Android — <a href=\"https://play.google.com/store/apps/details?id=com.v2ray.ang\">v2rayNG</a>.\n"
-        + "• iOS — <a href=\"https://apps.apple.com/app/shadowrocket/id932747118\">Shadowrocket</a>.\n"
-        + "• Windows/macOS — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> / "
-        + "<a href=\"https://apps.apple.com/app/stash-stash/id1596063349\">Stash</a>."
+        + "• Android — <a href=\"https://www.v2box.app\">V2Box</a> (если Google Play недоступен, скачай APK с сайта).\n"
+        + "• iOS — <a href=\"https://apps.apple.com/app/v2box-v2ray-client/id6446814690\">V2Box</a>.\n"
+        + "• Windows — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> (бесплатно).\n"
+        + "• Linux — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> через Wine или <a href=\"https://github.com/v2rayA/v2rayA\">v2rayA</a>.\n"
+        + "• macOS — <a href=\"https://github.com/2dust/v2rayN/releases\">v2rayN</a> через Wine или <a href=\"https://github.com/yanue/V2rayU\">V2RayU</a>."
     )
     await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
     if link:
