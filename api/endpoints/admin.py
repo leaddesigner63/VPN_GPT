@@ -8,7 +8,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from api import config
@@ -29,12 +29,6 @@ def require_admin(x_admin_token: str | None) -> None:
     logger.debug("Authorized admin request")
 
 
-class AdminAuthPayload(BaseModel):
-    """Request payload for admin password authentication."""
-
-    password: str
-
-
 class AdminAuthResponse(BaseModel):
     """Response returned after successful authentication."""
 
@@ -42,11 +36,29 @@ class AdminAuthResponse(BaseModel):
     admin_token: str | None = None
 
 
-@router.post("/auth", response_model=AdminAuthResponse, tags=["admin"], include_in_schema=False)
-def authenticate_admin(payload: AdminAuthPayload) -> AdminAuthResponse:
+@router.post(
+    "/auth",
+    response_model=AdminAuthResponse,
+    tags=["admin"],
+    include_in_schema=False,
+)
+async def authenticate_admin(request: Request) -> AdminAuthResponse:
     """Validate the admin password and return the API token."""
 
-    password = payload.password.strip()
+    raw_password: str | None = None
+    content_type = request.headers.get("content-type", "").lower()
+    try:
+        if content_type.startswith("application/json"):
+            payload = await request.json()
+            if isinstance(payload, dict):
+                raw_password = payload.get("password")
+        else:
+            form = await request.form()
+            raw_password = form.get("password")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("Failed to parse admin auth payload", exc_info=exc)
+
+    password = (raw_password or "").strip()
     if not password:
         logger.warning("Admin authentication attempt with empty password")
         raise HTTPException(status_code=400, detail="Пароль обязателен")
