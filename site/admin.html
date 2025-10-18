@@ -70,6 +70,70 @@
         border-radius: 18px;
       }
 
+      .filters-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: flex-end;
+      }
+
+      .filter-group {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .filter-group span {
+        font-size: 0.85rem;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        text-transform: uppercase;
+      }
+
+      .chip-set {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .chip-set button {
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.4);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 0.4rem 0.9rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        transition: background 120ms ease, border 120ms ease, transform 120ms ease;
+      }
+
+      .chip-set button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(56, 189, 248, 0.6);
+      }
+
+      .chip-set button.active {
+        background: rgba(56, 189, 248, 0.22);
+        border-color: rgba(56, 189, 248, 0.65);
+        color: var(--accent);
+      }
+
+      .chip-set button:focus-visible {
+        outline: 2px solid rgba(14, 165, 233, 0.8);
+        outline-offset: 2px;
+      }
+
+      .tag-filter {
+        min-width: 220px;
+      }
+
+      .results-meta {
+        margin-top: 0.25rem;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+      }
+
       .controls-row {
         display: flex;
         flex-wrap: wrap;
@@ -386,6 +450,13 @@
         color: var(--error);
       }
 
+      mark {
+        background: rgba(56, 189, 248, 0.25);
+        color: inherit;
+        padding: 0 0.15em;
+        border-radius: 4px;
+      }
+
       .auth-overlay {
         position: fixed;
         inset: 0;
@@ -544,11 +615,32 @@
             <input id="search" type="search" placeholder="Название, путь или тег" />
           </label>
         </div>
+        <div class="filters-row">
+          <div id="method-filter" class="filter-group" role="group" aria-label="Фильтр по HTTP-методам">
+            <span>Методы</span>
+            <div class="chip-set">
+              <button type="button" data-method="__all" class="active" aria-pressed="true">Все</button>
+              <button type="button" data-method="GET" aria-pressed="false">GET</button>
+              <button type="button" data-method="POST" aria-pressed="false">POST</button>
+              <button type="button" data-method="PUT" aria-pressed="false">PUT</button>
+              <button type="button" data-method="PATCH" aria-pressed="false">PATCH</button>
+              <button type="button" data-method="DELETE" aria-pressed="false">DELETE</button>
+            </div>
+          </div>
+          <label class="filter-group tag-filter">
+            <span>Теги</span>
+            <select id="tag-filter">
+              <option value="__all">Все теги</option>
+            </select>
+          </label>
+        </div>
         <div class="toolbar">
           <button id="refresh" type="button">Обновить схему</button>
           <button id="expand-all" type="button" class="secondary">Раскрыть всё</button>
           <button id="collapse-all" type="button" class="secondary">Свернуть всё</button>
+          <button id="clear-filters" type="button" class="secondary">Сбросить фильтры</button>
         </div>
+        <div id="results-summary" class="results-meta" aria-live="polite"></div>
         <div id="status-bar" class="status-bar" role="status"></div>
       </section>
 
@@ -567,6 +659,12 @@
           authenticated: false,
           adminToken: "",
         },
+        filters: {
+          query: "",
+          methods: new Set(),
+          tag: "__all",
+        },
+        tags: [],
       };
 
       const selectors = {
@@ -576,6 +674,7 @@
         refresh: document.getElementById("refresh"),
         expandAll: document.getElementById("expand-all"),
         collapseAll: document.getElementById("collapse-all"),
+        clearFilters: document.getElementById("clear-filters"),
         endpoints: document.getElementById("endpoints"),
         statusBar: document.getElementById("status-bar"),
         emptyState: document.getElementById("empty-state"),
@@ -584,9 +683,66 @@
         authPassword: document.getElementById("admin-password"),
         authError: document.getElementById("auth-error"),
         authSubmit: document.getElementById("auth-submit"),
+        methodFilter: document.getElementById("method-filter"),
+        tagFilter: document.getElementById("tag-filter"),
+        resultsSummary: document.getElementById("results-summary"),
       };
 
       const METHOD_PRIORITY = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"];
+      const TAG_ALL_VALUE = "__all";
+      const STORAGE_KEYS = {
+        baseUrl: "admin-panel.base-url",
+        adminToken: "admin-panel.admin-token",
+      };
+
+      function savePreference(key, value) {
+        try {
+          if (value) {
+            window.localStorage.setItem(key, value);
+          } else {
+            window.localStorage.removeItem(key);
+          }
+        } catch (error) {
+          console.warn("Не удалось сохранить настройки", error);
+        }
+      }
+
+      function loadPreference(key) {
+        try {
+          return window.localStorage.getItem(key) || "";
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function escapeRegex(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function highlightMatch(text, query) {
+        if (!text) return "";
+        if (!query) {
+          return escapeHtml(text);
+        }
+        const terms = query
+          .split(/\s+/)
+          .map((term) => term.trim())
+          .filter(Boolean);
+        if (!terms.length) {
+          return escapeHtml(text);
+        }
+        const pattern = new RegExp(`(${terms.map(escapeRegex).join("|")})`, "gi");
+        return escapeHtml(text).replace(pattern, "<mark>$1</mark>");
+      }
 
       function setStatus(message, tone = "info") {
         selectors.statusBar.textContent = message;
@@ -608,6 +764,8 @@
         if (adminToken && !selectors.adminToken.value) {
           selectors.adminToken.value = adminToken;
         }
+
+        savePreference(STORAGE_KEYS.adminToken, selectors.adminToken.value.trim());
 
         if (!silent) {
           const tone = adminToken ? "success" : "warning";
@@ -762,6 +920,7 @@
           }
           const spec = await response.json();
           state.spec = spec;
+          refreshTagFilterOptions();
           renderEndpoints();
           if (!silent) {
             setStatus("Схема успешно обновлена", "success");
@@ -811,31 +970,49 @@
         const entries = buildEndpointIndex();
         if (!entries.length) {
           selectors.emptyState.hidden = false;
+          updateResultsSummary(0, 0);
           return;
         }
         selectors.emptyState.hidden = true;
-        const filter = normalizeText(selectors.search.value);
+        const query = state.filters.query.trim();
+        const normalizedTokens = normalizeText(query)
+          .split(/\s+/)
+          .map((term) => term.trim())
+          .filter(Boolean);
+        const normalizedTag = normalizeText(state.filters.tag);
+        const activeMethods = state.filters.methods;
         const fragment = document.createDocumentFragment();
         const filtered = [];
         entries.forEach((entry, index) => {
           const { path, method, operation } = entry;
+          if (activeMethods.size && !activeMethods.has(method)) {
+            return;
+          }
+          if (
+            state.filters.tag !== TAG_ALL_VALUE &&
+            !(operation.tags || []).some((tag) => normalizeText(tag) === normalizedTag)
+          ) {
+            return;
+          }
           const searchable = [path, method, operation.summary, operation.operationId]
             .concat(operation.tags || [])
             .map(normalizeText)
             .join(" ");
-          if (filter && !searchable.includes(filter)) {
+          const matchesQuery = normalizedTokens.every((token) => searchable.includes(token));
+          if (normalizedTokens.length && !matchesQuery) {
             return;
           }
-          const element = buildEndpointCard(entry, index);
+          const element = buildEndpointCard(entry, index, query);
           fragment.appendChild(element);
           filtered.push(element);
         });
         selectors.endpoints.appendChild(fragment);
         selectors.emptyState.hidden = filtered.length !== 0;
         state.filtered = filtered;
+        updateResultsSummary(entries.length, filtered.length);
       }
 
-      function buildEndpointCard(entry, index) {
+      function buildEndpointCard(entry, index, query) {
         const { path, method, operation } = entry;
         const card = document.createElement("article");
         card.className = "endpoint";
@@ -858,14 +1035,15 @@
 
         const pathSpan = document.createElement("span");
         pathSpan.className = "path";
-        pathSpan.textContent = path;
+        pathSpan.innerHTML = highlightMatch(path, query);
         info.appendChild(pathSpan);
 
         header.appendChild(info);
 
         const summary = document.createElement("div");
         summary.className = "summary";
-        summary.textContent = operation.summary || operation.operationId || "Без описания";
+        const summaryText = operation.summary || operation.operationId || "Без описания";
+        summary.innerHTML = highlightMatch(summaryText, query);
         header.appendChild(summary);
 
         const toggle = document.createElement("div");
@@ -1286,6 +1464,7 @@
       }
 
       selectors.search.addEventListener("input", () => {
+        state.filters.query = selectors.search.value;
         renderEndpoints();
       });
 
@@ -1296,7 +1475,65 @@
       selectors.expandAll.addEventListener("click", expandAll);
       selectors.collapseAll.addEventListener("click", collapseAll);
 
+      selectors.clearFilters.addEventListener("click", () => {
+        selectors.search.value = "";
+        state.filters.query = "";
+        state.filters.methods.clear();
+        state.filters.tag = TAG_ALL_VALUE;
+        updateMethodChips();
+        if (selectors.tagFilter) {
+          selectors.tagFilter.value = TAG_ALL_VALUE;
+        }
+        renderEndpoints();
+      });
+
+      if (selectors.methodFilter) {
+        selectors.methodFilter.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-method]");
+          if (!button) return;
+          const method = button.dataset.method;
+          if (method === "__all") {
+            state.filters.methods.clear();
+          } else {
+            if (state.filters.methods.has(method)) {
+              state.filters.methods.delete(method);
+            } else {
+              state.filters.methods.add(method);
+            }
+          }
+          updateMethodChips();
+          renderEndpoints();
+        });
+      }
+
+      if (selectors.tagFilter) {
+        selectors.tagFilter.addEventListener("change", () => {
+          state.filters.tag = selectors.tagFilter.value || TAG_ALL_VALUE;
+          renderEndpoints();
+        });
+      }
+
+      selectors.baseUrl.addEventListener("change", () => {
+        savePreference(STORAGE_KEYS.baseUrl, selectors.baseUrl.value.trim());
+      });
+
+      selectors.baseUrl.addEventListener("blur", () => {
+        savePreference(STORAGE_KEYS.baseUrl, selectors.baseUrl.value.trim());
+      });
+
+      selectors.adminToken.addEventListener("input", () => {
+        savePreference(STORAGE_KEYS.adminToken, selectors.adminToken.value.trim());
+      });
+
       window.addEventListener("DOMContentLoaded", () => {
+        const storedBaseUrl = loadPreference(STORAGE_KEYS.baseUrl);
+        if (storedBaseUrl) {
+          selectors.baseUrl.value = storedBaseUrl;
+        }
+        const storedToken = loadPreference(STORAGE_KEYS.adminToken);
+        if (storedToken) {
+          selectors.adminToken.value = storedToken;
+        }
         resolveBaseUrl();
         if (selectors.authOverlay) {
           selectors.authOverlay.hidden = false;
@@ -1304,7 +1541,73 @@
         if (selectors.authPassword) {
           selectors.authPassword.focus();
         }
+        updateMethodChips();
+        refreshTagFilterOptions();
+        updateResultsSummary(0, 0);
       });
+
+      function updateMethodChips() {
+        if (!selectors.methodFilter) return;
+        const buttons = selectors.methodFilter.querySelectorAll("button[data-method]");
+        buttons.forEach((button) => {
+          const method = button.dataset.method;
+          const isAll = method === "__all";
+          const isActive = isAll
+            ? state.filters.methods.size === 0
+            : state.filters.methods.has(method);
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-pressed", String(isActive));
+        });
+      }
+
+      function extractTagsFromSpec() {
+        if (!state.spec || !state.spec.paths) {
+          return [];
+        }
+        const tagSet = new Set();
+        Object.values(state.spec.paths).forEach((operations) => {
+          Object.values(operations).forEach((operation) => {
+            (operation.tags || []).forEach((tag) => tagSet.add(tag));
+          });
+        });
+        return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "ru"));
+      }
+
+      function refreshTagFilterOptions() {
+        if (!selectors.tagFilter) return;
+        const tags = extractTagsFromSpec();
+        state.tags = tags;
+        const currentValue = selectors.tagFilter.value || state.filters.tag || TAG_ALL_VALUE;
+        selectors.tagFilter.innerHTML = "";
+        const defaultOption = document.createElement("option");
+        defaultOption.value = TAG_ALL_VALUE;
+        defaultOption.textContent = "Все теги";
+        selectors.tagFilter.appendChild(defaultOption);
+        tags.forEach((tag) => {
+          const option = document.createElement("option");
+          option.value = tag;
+          option.textContent = tag;
+          selectors.tagFilter.appendChild(option);
+        });
+        if (tags.includes(currentValue)) {
+          selectors.tagFilter.value = currentValue;
+          state.filters.tag = currentValue;
+        } else {
+          selectors.tagFilter.value = TAG_ALL_VALUE;
+          state.filters.tag = TAG_ALL_VALUE;
+        }
+        selectors.tagFilter.disabled = tags.length === 0;
+      }
+
+      function updateResultsSummary(total, shown) {
+        if (!selectors.resultsSummary) return;
+        if (!total) {
+          selectors.resultsSummary.textContent = "Эндпоинты пока не загружены.";
+          return;
+        }
+        const prefix = shown === total ? "Показаны все" : `Показано ${shown} из ${total}`;
+        selectors.resultsSummary.textContent = `${prefix} эндпоинтов`;
+      }
     </script>
   </body>
 </html>
