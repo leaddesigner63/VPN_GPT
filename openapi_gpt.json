@@ -389,6 +389,71 @@
         }
       }
     },
+    "/users/summary": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Users Summary",
+        "operationId": "users_summary_users_summary_get",
+        "parameters": [
+          {
+            "name": "x-admin-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Token"
+            }
+          },
+          {
+            "name": "x-internal-token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/payments/create": {
       "post": {
         "tags": [
@@ -746,48 +811,6 @@
         }
       }
     },
-    "/notify/broadcast": {
-      "post": {
-        "tags": [
-          "notify"
-        ],
-        "summary": "Broadcast Message",
-        "description": "Массовая рассылка сообщений всем Telegram-пользователям с известным chat_id.",
-        "operationId": "notify_broadcast_notify_broadcast_post",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BroadcastRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BroadcastResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/notify/notify/send": {
       "post": {
         "tags": [
@@ -814,13 +837,27 @@
           "admin"
         ],
         "summary": "Backup Db",
+        "description": "Create a timestamped database backup.",
         "operationId": "backup_db_admin_backup_db_post",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "type": "object",
+                  "title": "Response Backup Db Admin Backup Db Post"
+                }
               }
             }
           },
@@ -830,6 +867,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stars/invoices": {
+      "get": {
+        "tags": [
+          "stars"
+        ],
+        "summary": "Get Star Invoices",
+        "operationId": "get_star_invoices_stars_invoices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StarInvoicesResponse"
                 }
               }
             }
@@ -859,42 +917,6 @@
   },
   "components": {
     "schemas": {
-      "BroadcastRequest": {
-        "properties": {
-          "text": {
-            "type": "string",
-            "title": "Text"
-          }
-        },
-        "type": "object",
-        "required": [
-          "text"
-        ],
-        "title": "BroadcastRequest"
-      },
-      "BroadcastResponse": {
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "title": "Ok"
-          },
-          "sent": {
-            "type": "integer",
-            "title": "Sent"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "ok",
-          "sent",
-          "total"
-        ],
-        "title": "BroadcastResponse"
-      },
       "ConfirmPaymentRequest": {
         "properties": {
           "payment_id": {
@@ -1724,6 +1746,226 @@
         ],
         "title": "RenewKeyRequest"
       },
+      "StarInvoice": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "price_stars": {
+            "type": "integer",
+            "title": "Price Stars"
+          },
+          "link": {
+            "type": "string",
+            "title": "Link"
+          },
+          "is_subscription": {
+            "type": "boolean",
+            "title": "Is Subscription",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "title",
+          "price_stars",
+          "link"
+        ],
+        "title": "StarInvoice"
+      },
+      "StarInvoicesResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "plans": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StarInvoice"
+            },
+            "type": "object",
+            "title": "Plans"
+          },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StarInvoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "plans"
+        ],
+        "title": "StarInvoicesResponse"
+      },
+      "UserSummary": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "total_keys": {
+            "type": "integer",
+            "title": "Total Keys",
+            "default": 0
+          },
+          "active_keys": {
+            "type": "integer",
+            "title": "Active Keys",
+            "default": 0
+          },
+          "has_trial_key": {
+            "type": "boolean",
+            "title": "Has Trial Key",
+            "default": false
+          },
+          "last_key_issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Key Issued At"
+          },
+          "last_key_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Key Expires At"
+          },
+          "total_payments": {
+            "type": "integer",
+            "title": "Total Payments",
+            "default": 0
+          },
+          "paid_payments": {
+            "type": "integer",
+            "title": "Paid Payments",
+            "default": 0
+          },
+          "paid_amount": {
+            "type": "integer",
+            "title": "Paid Amount",
+            "default": 0
+          },
+          "last_payment_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Payment At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "UserSummary"
+      },
+      "UsersSummaryResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserSummary"
+            },
+            "type": "array",
+            "title": "Users"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "users"
+        ],
+        "title": "UsersSummaryResponse"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1804,11 +2046,5 @@
         "title": "WebhookResponse"
       }
     }
-  },
-  "servers": [
-    {
-      "url": "https://vpn-gpt.store/api",
-      "description": "Production deployment"
-    }
-  ]
+  }
 }
