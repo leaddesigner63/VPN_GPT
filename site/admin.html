@@ -627,12 +627,29 @@
           base = new URL(window.location.origin);
         }
 
+        if (/^https?:\/\//i.test(pathname)) {
+          return new URL(pathname);
+        }
+
+        const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
+
+        if (normalized.startsWith("/") && base.pathname && base.pathname !== "/") {
+          const merged = new URL(base.toString());
+          const prefix = merged.pathname.endsWith("/")
+            ? merged.pathname.slice(0, -1)
+            : merged.pathname;
+          merged.pathname = `${prefix}${normalized}`;
+          return merged;
+        }
+
         try {
-          return new URL(pathname, base);
+          return new URL(normalized, base);
         } catch (error) {
-          const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
-          const fallback = new URL(base);
-          fallback.pathname = normalized;
+          const fallback = new URL(base.toString());
+          const prefix = fallback.pathname.endsWith("/")
+            ? fallback.pathname.slice(0, -1)
+            : fallback.pathname;
+          fallback.pathname = `${prefix}${normalized}`;
           return fallback;
         }
       }

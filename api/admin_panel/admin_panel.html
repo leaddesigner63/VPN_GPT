@@ -618,9 +618,44 @@
         }
       }
 
+      function buildApiUrl(pathname) {
+        const baseValue = resolveBaseUrl();
+        let base;
+        try {
+          base = new URL(baseValue);
+        } catch (error) {
+          base = new URL(window.location.origin);
+        }
+
+        if (/^https?:\/\//i.test(pathname)) {
+          return new URL(pathname);
+        }
+
+        const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
+
+        if (normalized.startsWith("/") && base.pathname && base.pathname !== "/") {
+          const merged = new URL(base.toString());
+          const prefix = merged.pathname.endsWith("/")
+            ? merged.pathname.slice(0, -1)
+            : merged.pathname;
+          merged.pathname = `${prefix}${normalized}`;
+          return merged;
+        }
+
+        try {
+          return new URL(normalized, base);
+        } catch (error) {
+          const fallback = new URL(base.toString());
+          const prefix = fallback.pathname.endsWith("/")
+            ? fallback.pathname.slice(0, -1)
+            : fallback.pathname;
+          fallback.pathname = `${prefix}${normalized}`;
+          return fallback;
+        }
+      }
+
       async function authenticateWithPassword(password) {
-        const baseUrl = resolveBaseUrl();
-        const url = new URL("/admin/auth", baseUrl);
+        const url = buildApiUrl("/admin/auth");
         const body = new URLSearchParams();
         body.set("password", password);
 
@@ -681,7 +716,8 @@
           if (!silent) {
             setStatus("Загружаем OpenAPI-схему…", "info");
           }
-          const response = await fetch("/openapi.json", { cache: "no-store" });
+          const url = buildApiUrl("/openapi.json");
+          const response = await fetch(url.toString(), { cache: "no-store" });
           if (!response.ok) {
             throw new Error(`Не удалось загрузить схему: ${response.status}`);
           }
@@ -1060,7 +1096,6 @@
       async function submitRequest(form, statusEl, preEl) {
         const method = form.dataset.method;
         const path = form.dataset.path;
-        const baseUrl = resolveBaseUrl();
         let urlPath = path;
         const pathInputs = form.querySelectorAll('[data-param-type="path"]');
         for (const input of pathInputs) {
@@ -1072,7 +1107,7 @@
           }
           urlPath = urlPath.replace(`{${input.name}}`, encodeURIComponent(value));
         }
-        const url = new URL(urlPath, baseUrl);
+        const url = buildApiUrl(urlPath);
         const queryInputs = form.querySelectorAll('[data-param-type="query"]');
         const query = new URLSearchParams(url.search);
         for (const input of queryInputs) {
