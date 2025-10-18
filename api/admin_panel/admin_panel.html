@@ -615,13 +615,15 @@
       async function authenticateWithPassword(password) {
         const baseUrl = resolveBaseUrl();
         const url = new URL("/admin/auth", baseUrl);
+        const body = new URLSearchParams();
+        body.set("password", password);
+
         const response = await fetch(url.toString(), {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({ password }),
+          body,
         });
 
         let payload = null;

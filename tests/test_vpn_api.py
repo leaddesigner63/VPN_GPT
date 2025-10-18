@@ -220,6 +220,10 @@ def test_admin_auth_endpoint(configured_env):
         assert body["ok"] is True
         assert body["admin_token"] == "secret"
 
+        form_ok = client.post("/admin/auth", data={"password": "panelpass"})
+        assert form_ok.status_code == 200
+        assert form_ok.json()["admin_token"] == "secret"
+
         bad = client.post("/admin/auth", json={"password": "wrong"})
         assert bad.status_code == 401
         assert bad.json()["detail"] == "Неверный пароль"
