@@ -65,6 +65,15 @@ renewal_notification_scheduler = RenewalNotificationScheduler(
 )
 
 
+class RootResponse(BaseModel):
+    """Schema describing the payload returned by the API root endpoints."""
+
+    ok: bool = Field(..., description="Indicates whether the service is operating normally.")
+    message: str = Field(..., description="Short description of the service state.")
+    docs_url: str = Field(..., description="Relative URL of the interactive API documentation.")
+    openapi_url: str = Field(..., description="Relative URL of the OpenAPI specification document.")
+
+
 class HealthResponse(BaseModel):
     """Schema describing the payload returned by the health-check endpoint."""
 
@@ -105,6 +114,31 @@ def _load_admin_panel_html() -> str:
 
     html_path = resources.files("api.admin_panel").joinpath("admin_panel.html")
     return html_path.read_text(encoding="utf-8")
+
+
+def _root_payload() -> RootResponse:
+    """Return a consistent payload for root endpoints."""
+
+    return RootResponse(
+        ok=True,
+        message="VPN_GPT Action API is running.",
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+    )
+
+
+@app.get("/", response_model=RootResponse, include_in_schema=False)
+def root() -> RootResponse:
+    """Provide a friendly message at the API root."""
+
+    return _root_payload()
+
+
+@app.get("/api/", response_model=RootResponse, include_in_schema=False)
+def api_root() -> RootResponse:
+    """Provide a friendly message at the /api/ path for legacy clients."""
+
+    return _root_payload()
 
 
 @app.get("/admin/ui", include_in_schema=False, response_class=HTMLResponse)
