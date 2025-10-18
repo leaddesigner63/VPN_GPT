@@ -7,6 +7,7 @@ import secrets
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -52,9 +53,18 @@ async def authenticate_admin(request: Request) -> AdminAuthResponse:
             payload = await request.json()
             if isinstance(payload, dict):
                 raw_password = payload.get("password")
+        elif "application/x-www-form-urlencoded" in content_type:
+            raw_password = _extract_password_from_body(await request.body())
         else:
-            form = await request.form()
-            raw_password = form.get("password")
+            try:
+                form = await request.form()
+                raw_password = form.get("password")
+            except AssertionError as exc:
+                logger.warning(
+                    "Form parsing requires python-multipart; falling back to raw body",
+                    exc_info=exc,
+                )
+                raw_password = _extract_password_from_body(await request.body())
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning("Failed to parse admin auth payload", exc_info=exc)
 
@@ -106,3 +116,22 @@ def backup_db(
 
 
 __all__ = ["router"]
+
+
+def _extract_password_from_body(body: bytes | bytearray) -> str | None:
+    """Safely parse URL-encoded payloads without relying on python-multipart."""
+
+    if not body:
+        return None
+
+    try:
+        decoded = body.decode("utf-8")
+    except UnicodeDecodeError as exc:  # pragma: no cover - extremely rare
+        logger.warning("Failed to decode admin auth body", exc_info=exc)
+        return None
+
+    values = parse_qs(decoded, keep_blank_values=True).get("password")
+    if not values:
+        return None
+
+    return values[0]
