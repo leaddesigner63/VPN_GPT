@@ -494,7 +494,13 @@
       aria-modal="true"
       aria-labelledby="auth-title"
     >
-      <form id="auth-form" class="auth-card">
+      <form
+        id="auth-form"
+        class="auth-card"
+        method="post"
+        action="/admin/auth"
+        accept-charset="utf-8"
+      >
         <h2 id="auth-title">Вход в админ-панель</h2>
         <p>
           Введите админ-пароль из <code>.env</code>, чтобы получить доступ к панели
@@ -614,17 +620,21 @@
 
       function buildApiUrl(pathname) {
         const baseValue = resolveBaseUrl();
-        let url;
+        let base;
         try {
-          url = new URL(baseValue);
+          base = new URL(baseValue);
         } catch (error) {
-          url = new URL(window.location.origin);
+          base = new URL(window.location.origin);
         }
 
-        const basePath = url.pathname.replace(/\/+$/, "");
-        const extraPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
-        url.pathname = `${basePath}${extraPath}` || "/";
-        return url;
+        try {
+          return new URL(pathname, base);
+        } catch (error) {
+          const normalized = pathname.startsWith("/") ? pathname : `/${pathname}`;
+          const fallback = new URL(base);
+          fallback.pathname = normalized;
+          return fallback;
+        }
       }
 
       async function authenticateWithPassword(password) {

@@ -494,7 +494,13 @@
       aria-modal="true"
       aria-labelledby="auth-title"
     >
-      <form id="auth-form" class="auth-card">
+      <form
+        id="auth-form"
+        class="auth-card"
+        method="post"
+        action="/admin/auth"
+        accept-charset="utf-8"
+      >
         <h2 id="auth-title">Вход в админ-панель</h2>
         <p>
           Введите админ-пароль из <code>.env</code>, чтобы получить доступ к панели
