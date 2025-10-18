@@ -4,9 +4,10 @@ import asyncio
 import json
 import logging
 import os
+from datetime import UTC, datetime
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Deque, Dict, Sequence
+from typing import Any, Callable, Deque, Dict, Sequence
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -22,13 +23,23 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LabeledPrice,
     MenuButtonDefault,
     Message,
+    PreCheckoutQuery,
 )
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from api.utils import db as db_utils
+from handlers.stars import (
+    StarHandlerDependencies,
+    process_pending_deliveries as process_pending_star_deliveries,
+    setup_stars_handlers,
+)
+from utils.content_filters import assert_no_geoblocking, sanitize_text
 from utils.qrgen import make_qr
+from utils.stars import StarSettings, build_invoice_payload, load_star_settings, resolve_plan_duration
 
 load_dotenv()
 
@@ -124,6 +135,16 @@ SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
 BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
 TRIAL_DAYS = _get_int_env("TRIAL_DAYS", 0)
 PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
+
+
+def _parse_admin_usernames(raw: str | None) -> set[str]:
+    if not raw:
+        return set()
+    parts = [chunk.strip().lstrip("@") for chunk in raw.split(",")]
+    return {part.lower() for part in parts if part}
+
+
+BOT_ADMIN_USERNAMES = _parse_admin_usernames(os.getenv("BOT_ADMINS"))
 REFERRAL_BONUS_DAYS = _get_int_env("REFERRAL_BONUS_DAYS", 30)
 API_TIMEOUT = _get_float_env("VPN_API_TIMEOUT", 15.0)
 API_MAX_RETRIES = max(1, _get_int_env("VPN_API_MAX_RETRIES", 3))
@@ -202,6 +223,35 @@ PLANS = _parse_plans(PLAN_ENV)
 PLAN_ORDER = [code for code in ("1m", "3m", "12m") if code in PLANS] + [
     code for code in PLANS.keys() if code not in {"1m", "3m", "12m"}
 ]
+
+STAR_SETTINGS: StarSettings = load_star_settings()
+STAR_PAY_PREFIX = "stars:buy:"
+STAR_SUBSCRIPTION_CODE = "sub_1m"
+
+
+async def ensure_star_deliveries(message: Message, username: str) -> None:
+    if not STAR_SETTINGS.enabled:
+        return
+    try:
+        await process_pending_star_deliveries(message, username)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception(
+            "Failed to process pending Stars deliveries",
+            extra={"username": username, "chat_id": message.chat.id, "error": str(exc)},
+        )
+
+
+def _is_admin_user(user: Message | CallbackQuery | None, *, from_user=None) -> bool:
+    target = from_user or (user.from_user if user else None)
+    if target is None:
+        return False
+    if not BOT_ADMIN_USERNAMES:
+        return False
+    username = target.username
+    if not username:
+        return False
+    return username.lower() in BOT_ADMIN_USERNAMES
+
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
@@ -319,6 +369,7 @@ MENU_REF = "menu_ref"
 MENU_HELP = "menu_help"
 MENU_BACK = "menu_back"
 PAY_PLAN_PREFIX = "pay_plan:"
+PAY_CARD_MENU = "pay_card"
 _ALLOWED_BUTTON_SCHEMES = {"http", "https", "tg"}
 CANCEL_AI = "ai_cancel"
 
@@ -358,9 +409,44 @@ def build_back_menu(include_help: bool = True) -> InlineKeyboardMarkup:
 
 
 def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) -> InlineKeyboardMarkup:
-    """Show tariffs with callbacks that trigger invoice creation."""
+    """Show available payment options including Telegram Stars."""
 
     _ = (username, chat_id, ref)  # preserved for compatibility with callers
+
+    if not STAR_SETTINGS.enabled:
+        return build_card_payment_keyboard(username, chat_id, ref)
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for plan in STAR_SETTINGS.available_plans():
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"⭐️ {plan.title} · {plan.price_stars}⭐",
+                    callback_data=f"{STAR_PAY_PREFIX}{plan.code}",
+                )
+            ]
+        )
+
+    if STAR_SETTINGS.subscription_enabled and STAR_SETTINGS.subscription_plan:
+        sub_plan = STAR_SETTINGS.subscription_plan
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"⭐️ {sub_plan.title} · {sub_plan.price_stars}⭐",
+                    callback_data=f"{STAR_PAY_PREFIX}{sub_plan.code}",
+                )
+            ]
+        )
+
+    rows.append([InlineKeyboardButton(text="💳 Оплатить картой", callback_data=PAY_CARD_MENU)])
+    rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_card_payment_keyboard(
+    username: str, chat_id: int | None, ref: str | None
+) -> InlineKeyboardMarkup:
+    _ = (username, chat_id, ref)
     rows: list[list[InlineKeyboardButton]] = []
     for plan in PLAN_ORDER:
         price = PLANS[plan]
@@ -372,6 +458,7 @@ def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) 
                 )
             ]
         )
+    rows.append([InlineKeyboardButton(text="⬅️ К выбору оплаты", callback_data=MENU_PAY)])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -380,7 +467,7 @@ def build_payment_result_keyboard(pay_url: str | None) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if pay_url:
         rows.append([InlineKeyboardButton(text="💳 Оплатить", url=pay_url)])
-    rows.append([InlineKeyboardButton(text="⬅️ Выбрать другой тариф", callback_data=MENU_PAY)])
+    rows.append([InlineKeyboardButton(text="⬅️ Выбрать другой тариф", callback_data=PAY_CARD_MENU)])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -402,6 +489,43 @@ def build_payment_page_url(
     if BOT_USERNAME:
         params["bot"] = BOT_USERNAME
     return f"{BOT_PAYMENT_URL}?{urlencode(params)}"
+
+
+def _safe_text(text: str) -> str:
+    sanitized = sanitize_text(text)
+    assert_no_geoblocking(sanitized)
+    return sanitized
+
+
+def format_key_info(payload: dict[str, Any], username: str, title: str) -> tuple[str, str | None]:
+    lines: list[str] = [title]
+
+    payload_username = payload.get('username')
+    if payload_username:
+        lines.append(f'Пользователь: {payload_username}')
+    else:
+        lines.append(f'Пользователь: {username}')
+
+    uuid_value = payload.get('uuid')
+    if uuid_value:
+        lines.append(f'UUID: {uuid_value}')
+
+    expires = payload.get('expires_at')
+    if expires:
+        lines.append(f'Действует до: {expires}')
+
+    active = payload.get('active')
+    if active is not None:
+        status_text = 'активен' if active else 'неактивен'
+        lines.append(f'Статус: {status_text}')
+
+    link = payload.get('link')
+    if link:
+        lines.append('')
+        lines.append('🔗 Ссылка для подключения:')
+        lines.append(link)
+
+    return _safe_text('\n'.join(lines)), link
 
 
 def _is_supported_button_link(link: str) -> bool:
@@ -665,6 +789,71 @@ async def api_get(path: str, params: dict[str, Any] | None = None) -> dict[str, 
     return await _request_with_retry("GET", path, params=params)
 
 
+async def create_star_payment_record(
+    *,
+    user_id: int,
+    username: str | None,
+    plan: str,
+    amount_stars: int,
+    charge_id: str | None,
+    is_subscription: bool,
+    status: str = "paid",
+    delivery_pending: bool = False,
+) -> dict:
+    return await asyncio.to_thread(
+        db_utils.create_star_payment,
+        user_id=user_id,
+        username=username,
+        plan=plan,
+        amount_stars=amount_stars,
+        charge_id=charge_id,
+        is_subscription=is_subscription,
+        status=status,
+        delivery_pending=delivery_pending,
+    )
+
+
+async def get_star_payment_by_charge(charge_id: str) -> dict | None:
+    return await asyncio.to_thread(db_utils.get_star_payment_by_charge, charge_id)
+
+
+async def mark_star_payment_pending(payment_id: int, error: str | None = None) -> dict | None:
+    return await asyncio.to_thread(db_utils.mark_star_payment_pending, payment_id, error=error)
+
+
+async def mark_star_payment_fulfilled(payment_id: int) -> dict | None:
+    return await asyncio.to_thread(db_utils.mark_star_payment_fulfilled, payment_id)
+
+
+async def list_pending_star_payments(username: str) -> list[dict]:
+    return await asyncio.to_thread(db_utils.list_pending_star_payments, username)
+
+
+async def update_star_payment_status(payment_id: int, **fields: Any) -> dict | None:
+    return await asyncio.to_thread(db_utils.update_star_payment_status, payment_id, **fields)
+
+
+async def star_payments_summary(days: int | None = None) -> dict:
+    return await asyncio.to_thread(db_utils.star_payments_summary, days)
+
+
+async def _call_telegram_method(method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(url, json=payload)
+    except httpx.RequestError as exc:
+        logger.exception("Failed to call Telegram method", extra={"method": method, "error": str(exc)})
+        raise
+
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        logger.error("Telegram API returned error", extra={"method": method, "response": data})
+        raise RuntimeError(f"telegram_error:{method}")
+    return data.get("result")
+
+
 async def register_user(username: str, chat_id: int, ref: str | None) -> None:
     try:
         await api_post("/users/register", {"username": username, "chat_id": chat_id, "referrer": ref})
@@ -744,6 +933,71 @@ async def fetch_referral_stats(username: str) -> dict[str, Any]:
     return {"username": username, "total_referrals": 0, "total_days": 0}
 
 
+async def renew_star_plan(username: str, plan_code: str, chat_id: int | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"username": username}
+    if chat_id is not None:
+        payload["chat_id"] = chat_id
+
+    try:
+        duration_days = resolve_plan_duration(plan_code)
+    except RuntimeError:
+        duration_days = None
+
+    if plan_code in {"1m", "3m", "1y", "12m"}:
+        payload["plan"] = plan_code
+    elif duration_days is not None:
+        payload["days"] = duration_days
+    else:
+        raise RuntimeError(f"unknown_plan:{plan_code}")
+
+    response = await api_post("/vpn/renew_key", payload)
+    if not response.get("ok"):
+        detail = response.get("detail") or response.get("error") or "renew_failed"
+        raise RuntimeError(f"renew_failed:{detail}")
+    return response
+
+
+async def revoke_access_after_refund(username: str, plan_code: str) -> None:
+    try:
+        duration_days = resolve_plan_duration(plan_code)
+    except RuntimeError:
+        duration_days = 0
+    if duration_days <= 0:
+        duration_days = 30
+    try:
+        await api_post("/vpn/renew_key", {"username": username, "days": -abs(duration_days)})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception(
+            "Failed to revoke VPN access after refund",
+            extra={"username": username, "plan": plan_code, "error": str(exc)},
+        )
+
+
+async def _delete_previous_qr_for_stars(chat_id: int) -> None:
+    await _delete_previous_qr(chat_id)
+
+
+setup_stars_handlers(
+    dp,
+    StarHandlerDependencies(
+        settings=STAR_SETTINGS,
+        pay_prefix=STAR_PAY_PREFIX,
+        build_result_markup=build_result_markup,
+        remember_qr=_qr_links.remember,
+        delete_previous_qr=_delete_previous_qr_for_stars,
+        format_key_info=format_key_info,
+        register_user=register_user,
+        renew_access=renew_star_plan,
+        create_payment_record=create_star_payment_record,
+        get_payment_by_charge=get_star_payment_by_charge,
+        mark_payment_pending=mark_star_payment_pending,
+        mark_payment_fulfilled=mark_star_payment_fulfilled,
+        list_pending_payments=list_pending_star_payments,
+        logger=logger,
+    ),
+)
+
+
 def format_key_message(payload: dict[str, Any]) -> str:
     expires = payload.get("expires_at", "—")
     parts = ["<b>VPN-ключ</b>"]
@@ -813,6 +1067,7 @@ async def handle_start(message: Message, state: FSMContext) -> None:
         await apply_referral(ref, username, message.chat.id)
 
     await register_user(username, message.chat.id, ref)
+    await ensure_star_deliveries(message, username)
     await bot.set_chat_menu_button(message.chat.id, MenuButtonDefault())
 
     trial_phrase = _build_trial_phrase(TRIAL_DAYS)
@@ -850,6 +1105,7 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     await register_user(username, message.chat.id, None)
+    await ensure_star_deliveries(message, username)
     payload = await issue_trial_key(username, message.chat.id)
     if not payload:
         await edit_message_text_safe(
@@ -938,6 +1194,7 @@ async def handle_my_keys(call: CallbackQuery) -> None:
         return
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
+    await ensure_star_deliveries(message, username)
     keys = await fetch_keys(username)
     active_keys = [key for key in keys if key.get("active")]
     if not active_keys:
@@ -968,11 +1225,37 @@ async def handle_pay(call: CallbackQuery) -> None:
         return
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
-    text = (
-        "Выбери тариф. Мы создадим счёт автоматически и отправим безопасную ссылку на оплату."
-    )
+    await ensure_star_deliveries(message, username)
+    if STAR_SETTINGS.enabled:
+        text = (
+            "Выбери способ оплаты. Stars работают прямо в Telegram, либо можно перейти на оплату картой."
+        )
+    else:
+        text = "Выбери тариф — мы создадим счёт и отправим ссылку на оплату."
     keyboard = build_payment_keyboard(username, message.chat.id, username)
     await edit_message_text_safe(message, text, reply_markup=keyboard)
+    await call.answer()
+
+
+@dp.callback_query(F.data == PAY_CARD_MENU)
+async def handle_card_menu(call: CallbackQuery) -> None:
+    user = call.from_user
+    if user is None:
+        await call.answer()
+        return
+    message = call.message
+    if not message:
+        await call.answer()
+        return
+    await _delete_previous_qr(message.chat.id)
+    username = user.username or f"id_{user.id}"
+    await ensure_star_deliveries(message, username)
+    keyboard = build_card_payment_keyboard(username, message.chat.id, user.username)
+    await edit_message_text_safe(
+        message,
+        "Выбери тариф для оплаты картой.",
+        reply_markup=keyboard,
+    )
     await call.answer()
 
 
@@ -993,6 +1276,7 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
     username = user.username or f"id_{user.id}"
     if message:
         await _delete_previous_qr(message.chat.id)
+        await ensure_star_deliveries(message, username)
 
     await register_user(username, chat_id, user.username)
 
@@ -1178,12 +1462,151 @@ async def command_help(message: Message):
     await message.answer(build_help_text(), reply_markup=build_back_menu())
 
 
+def _parse_command_arguments(text: str) -> list[str]:
+    if not text:
+        return []
+    parts = text.strip().split()
+    return parts[1:]
+
+
+@dp.message(Command("stars_tx"))
+async def command_stars_transactions(message: Message):
+    await _delete_previous_qr(message.chat.id)
+    user = message.from_user
+    if not _is_admin_user(message, from_user=user):
+        await message.answer("Команда доступна только администраторам.")
+        return
+
+    args = _parse_command_arguments(message.text or "")
+    try:
+        limit = max(1, min(50, int(args[0]))) if args else 10
+    except ValueError:
+        limit = 10
+
+    try:
+        result = await _call_telegram_method("getStarTransactions", {"limit": limit})
+    except Exception as exc:
+        logger.exception("Failed to fetch star transactions", extra={"error": str(exc)})
+        await message.answer("Не удалось получить транзакции из Telegram. Проверьте логи.")
+        return
+
+    transactions = result.get("transactions") if isinstance(result, dict) else result
+    if not transactions:
+        await message.answer("Транзакции не найдены.")
+        return
+
+    lines: list[str] = []
+    for tx in transactions[:limit]:
+        tx_id = tx.get("id") if isinstance(tx, dict) else None
+        amount = None
+        if isinstance(tx, dict):
+            amount_info = tx.get("amount") or tx.get("star_amount") or tx.get("total_amount")
+            if isinstance(amount_info, dict):
+                amount_value = amount_info.get("amount") or amount_info.get("total_amount")
+                amount_currency = amount_info.get("currency") or "XTR"
+                amount = f"{amount_value} {amount_currency}" if amount_value is not None else None
+            elif amount_info is not None:
+                amount = f"{amount_info} XTR"
+        amount = amount or "—"
+        status = tx.get("status") if isinstance(tx, dict) else "—"
+        created = tx.get("date") or tx.get("created_at") if isinstance(tx, dict) else "—"
+        purpose = tx.get("type") or tx.get("purpose") if isinstance(tx, dict) else "—"
+        lines.append(f"#{tx_id} · {amount} · {purpose} · {status} · {created}")
+
+    response = "Последние транзакции:\n" + "\n".join(lines)
+    await message.answer(response)
+
+
+@dp.message(Command("stars_refund"))
+async def command_stars_refund(message: Message):
+    await _delete_previous_qr(message.chat.id)
+    user = message.from_user
+    if not _is_admin_user(message, from_user=user):
+        await message.answer("Команда доступна только администраторам.")
+        return
+
+    args = _parse_command_arguments(message.text or "")
+    if not args:
+        await message.answer("Использование: /stars_refund <charge_id>")
+        return
+
+    charge_id = args[0].strip()
+    if not charge_id:
+        await message.answer("Укажите идентификатор платежа (charge_id).")
+        return
+
+    try:
+        await _call_telegram_method("refundStarPayment", {"charge_id": charge_id})
+    except Exception as exc:
+        logger.exception("Failed to refund Stars payment", extra={"charge_id": charge_id, "error": str(exc)})
+        await message.answer("Не удалось выполнить рефанд через Telegram. Проверьте логи.")
+        return
+
+    record = await get_star_payment_by_charge(charge_id)
+    if record and record.get("id"):
+        await update_star_payment_status(
+            int(record["id"]),
+            status="refunded",
+            refunded_at=datetime.now(UTC),
+        )
+        username = record.get("username")
+        plan_code = record.get("plan") or "1m"
+        if username:
+            await revoke_access_after_refund(username, plan_code)
+
+    await message.answer("Рефанд Stars инициирован. Статус: успешно.")
+
+
+@dp.message(Command("stars_stats"))
+async def command_stars_stats(message: Message):
+    await _delete_previous_qr(message.chat.id)
+    user = message.from_user
+    if not _is_admin_user(message, from_user=user):
+        await message.answer("Команда доступна только администраторам.")
+        return
+
+    args = _parse_command_arguments(message.text or "")
+    days: int | None = None
+    if args:
+        try:
+            parsed = int(args[0])
+            if parsed > 0:
+                days = parsed
+        except ValueError:
+            pass
+
+    summary = await star_payments_summary(days)
+    paid = summary.get("paid", {})
+    refunded = summary.get("refunded", {})
+    canceled = summary.get("canceled", {})
+    failed = summary.get("failed", {})
+
+    total_paid = paid.get("total", 0)
+    total_count = paid.get("count", 0)
+    refunded_total = refunded.get("total", 0)
+    refunded_count = refunded.get("count", 0)
+    canceled_count = canceled.get("count", 0)
+    failed_count = failed.get("count", 0)
+
+    period_text = f"за последние {days} дн." if days else "за всё время"
+    lines = [
+        f"Статистика Stars ({period_text}):",
+        f"• Оплачено: {total_count} транзакций на {total_paid}⭐",
+        f"• Рефанды: {refunded_count} на {refunded_total}⭐",
+        f"• Отменено: {canceled_count}",
+        f"• Ошибки выдачи: {failed_count}",
+    ]
+    await message.answer("\n".join(lines))
+
+
 @dp.message()
 async def handle_message(message: Message) -> None:
     await _delete_previous_qr(message.chat.id)
     user = message.from_user
     if user is None or not message.text:
         return
+    username = user.username or f"id_{user.id}"
+    await ensure_star_deliveries(message, username)
     reply = await ask_gpt(message.chat.id, message.text)
     await message.answer(reply, reply_markup=build_back_menu())
 

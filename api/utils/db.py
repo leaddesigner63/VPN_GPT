@@ -24,6 +24,8 @@ RENEWAL_NOTIFICATION_STAGE_COUNT = 3
 _DEFAULT_NOTIFICATION_INTERVAL_HOURS = 24.0
 _DEFAULT_NOTIFICATION_RETRY_HOURS = 1.0
 
+_STAR_PAYMENT_ALLOWED_STATUSES = {"paid", "refunded", "canceled", "failed"}
+
 
 def _needs_schema_repair(error: sqlite3.OperationalError) -> bool:
     message = str(error).lower()
@@ -165,6 +167,24 @@ CREATE TABLE IF NOT EXISTS referrals (
   created_at TEXT NOT NULL,
   UNIQUE(referrer, referee)
 );
+
+CREATE TABLE IF NOT EXISTS star_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  username TEXT,
+  plan TEXT NOT NULL,
+  amount_stars INTEGER NOT NULL,
+  charge_id TEXT,
+  is_subscription INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  refunded_at TIMESTAMP,
+  fulfilled_at TIMESTAMP,
+  delivery_pending INTEGER NOT NULL DEFAULT 0,
+  delivery_attempts INTEGER NOT NULL DEFAULT 0,
+  last_delivery_attempt TIMESTAMP,
+  delivery_error TEXT
+);
 """
 
 INDEX_SQL = (
@@ -177,6 +197,9 @@ INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_payments_provider_payment_id ON payments(provider_payment_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id)",
     "CREATE INDEX IF NOT EXISTS idx_renewal_notifications_next_attempt ON renewal_notifications(next_attempt_at)",
+    "CREATE INDEX IF NOT EXISTS idx_star_payments_user ON star_payments(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_star_payments_charge ON star_payments(charge_id)",
+    "CREATE INDEX IF NOT EXISTS idx_star_payments_status ON star_payments(status)",
 )
 
 
@@ -552,6 +575,28 @@ def _normalise_payment_row(row: dict | None) -> dict | None:
     return row
 
 
+def _normalise_star_payment_row(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    result = dict(row)
+    username = result.get("username")
+    if username:
+        try:
+            result["username"] = normalise_username(username)
+        except ValueError:
+            pass
+    result["is_subscription"] = bool(result.get("is_subscription"))
+    result["delivery_pending"] = bool(result.get("delivery_pending"))
+    result["amount_stars"] = int(result.get("amount_stars", 0) or 0)
+    result["delivery_attempts"] = int(result.get("delivery_attempts", 0) or 0)
+    status = (result.get("status") or "").strip()
+    if status and status not in _STAR_PAYMENT_ALLOWED_STATUSES:
+        logger.warning(
+            "Unknown star payment status encountered", extra={"status": status, "id": result.get("id")}
+        )
+    return result
+
+
 def create_payment(
     *,
     payment_id: str,
@@ -729,6 +774,245 @@ def get_payment_by_order(order_id: str) -> dict | None:
     result = _run_with_schema_retry(_operation)
     return _normalise_payment_row(result)
 
+
+def _coerce_star_status(status: str) -> str:
+    cleaned = (status or "").strip().lower()
+    if cleaned not in _STAR_PAYMENT_ALLOWED_STATUSES:
+        raise ValueError(f"Invalid star payment status: {status}")
+    return cleaned
+
+
+def create_star_payment(
+    *,
+    user_id: int,
+    username: str | None,
+    plan: str,
+    amount_stars: int,
+    charge_id: str | None,
+    is_subscription: bool = False,
+    status: str = "paid",
+    delivery_pending: bool = False,
+    refunded_at: datetime | None = None,
+) -> dict:
+    status_clean = _coerce_star_status(status)
+    normalized_username: str | None = None
+    if username:
+        try:
+            normalized_username = normalise_username(username)
+        except ValueError:
+            normalized_username = username.strip()
+
+    if charge_id:
+        existing = get_star_payment_by_charge(charge_id)
+        if existing:
+            return existing
+
+    paid_iso = _utcnow().replace(microsecond=0).isoformat()
+    refunded_iso = refunded_at.replace(microsecond=0).isoformat() if refunded_at else None
+
+    def _operation() -> dict:
+        with connect() as con:
+            con.execute(
+                """
+                INSERT INTO star_payments (
+                    user_id,
+                    username,
+                    plan,
+                    amount_stars,
+                    charge_id,
+                    is_subscription,
+                    status,
+                    paid_at,
+                    refunded_at,
+                    fulfilled_at,
+                    delivery_pending,
+                    delivery_attempts,
+                    last_delivery_attempt,
+                    delivery_error
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, NULL)
+                """,
+                (
+                    int(user_id),
+                    normalized_username,
+                    plan,
+                    int(amount_stars),
+                    charge_id,
+                    1 if is_subscription else 0,
+                    status_clean,
+                    paid_iso,
+                    refunded_iso,
+                    1 if delivery_pending else 0,
+                ),
+            )
+            cur = con.execute("SELECT * FROM star_payments WHERE id=last_insert_rowid()")
+            row = cur.fetchone()
+        return _row_to_dict(row) or {}
+
+    row = _run_with_schema_retry(_operation)
+    return _normalise_star_payment_row(row) or {}
+
+
+def get_star_payment(payment_id: int) -> dict | None:
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute("SELECT * FROM star_payments WHERE id=?", (payment_id,))
+            return _row_to_dict(cur.fetchone())
+
+    result = _run_with_schema_retry(_operation)
+    return _normalise_star_payment_row(result)
+
+
+def get_star_payment_by_charge(charge_id: str) -> dict | None:
+    if not charge_id:
+        return None
+
+    def _operation() -> dict | None:
+        with connect() as con:
+            cur = con.execute("SELECT * FROM star_payments WHERE charge_id=?", (charge_id,))
+            return _row_to_dict(cur.fetchone())
+
+    result = _run_with_schema_retry(_operation)
+    return _normalise_star_payment_row(result)
+
+
+def update_star_payment_status(
+    payment_id: int,
+    *,
+    status: str | None = None,
+    refunded_at: datetime | None = None,
+    fulfilled_at: datetime | None = None,
+    delivery_pending: bool | None = None,
+    delivery_error: str | None = None,
+    charge_id: str | None = None,
+) -> dict | None:
+    if status is not None:
+        status = _coerce_star_status(status)
+    refunded_iso = refunded_at.replace(microsecond=0).isoformat() if refunded_at else None
+    fulfilled_iso = fulfilled_at.replace(microsecond=0).isoformat() if fulfilled_at else None
+    delivery_attempts_increment = 1 if delivery_pending else 0
+    now_iso = _utcnow().replace(microsecond=0).isoformat()
+
+    def _operation() -> dict | None:
+        with connect() as con:
+            assignments: list[str] = []
+            params: list[Any] = []
+            if status is not None:
+                assignments.append("status=?")
+                params.append(status)
+            if refunded_at is not None:
+                assignments.append("refunded_at=?")
+                params.append(refunded_iso)
+            if fulfilled_at is not None:
+                assignments.append("fulfilled_at=?")
+                params.append(fulfilled_iso)
+            if delivery_pending is not None:
+                assignments.append("delivery_pending=?")
+                params.append(1 if delivery_pending else 0)
+                assignments.append("last_delivery_attempt=?")
+                params.append(now_iso)
+                if delivery_attempts_increment:
+                    assignments.append("delivery_attempts = delivery_attempts + 1")
+            if delivery_error is not None:
+                assignments.append("delivery_error=?")
+                params.append(delivery_error[:500] if delivery_error else None)
+            if charge_id is not None:
+                assignments.append("charge_id=?")
+                params.append(charge_id)
+
+            if not assignments:
+                cur = con.execute("SELECT * FROM star_payments WHERE id=?", (payment_id,))
+                return _row_to_dict(cur.fetchone())
+
+            params.append(payment_id)
+            query = f"UPDATE star_payments SET {', '.join(assignments)} WHERE id=?"
+            con.execute(query, params)
+            cur = con.execute("SELECT * FROM star_payments WHERE id=?", (payment_id,))
+            return _row_to_dict(cur.fetchone())
+
+    result = _run_with_schema_retry(_operation)
+    return _normalise_star_payment_row(result)
+
+
+def list_pending_star_payments(username: str) -> list[dict]:
+    if not username:
+        return []
+    try:
+        normalized = normalise_username(username)
+    except ValueError:
+        normalized = username
+
+    def _operation() -> list[sqlite3.Row]:
+        with connect() as con:
+            cur = con.execute(
+                """
+                SELECT * FROM star_payments
+                WHERE username=? AND delivery_pending=1 AND status='paid'
+                ORDER BY paid_at ASC
+                """,
+                (normalized,),
+            )
+            return cur.fetchall()
+
+    rows = _run_with_schema_retry(_operation)
+    return [_normalise_star_payment_row(_row_to_dict(row)) for row in rows if row is not None]
+
+
+def mark_star_payment_pending(payment_id: int, *, error: str | None = None) -> dict | None:
+    return update_star_payment_status(
+        payment_id,
+        delivery_pending=True,
+        delivery_error=error,
+        fulfilled_at=None,
+    )
+
+
+def mark_star_payment_fulfilled(payment_id: int) -> dict | None:
+    now = _utcnow().replace(microsecond=0)
+    return update_star_payment_status(
+        payment_id,
+        delivery_pending=False,
+        delivery_error=None,
+        fulfilled_at=now,
+    )
+
+
+def star_payments_summary(days: int | None = None) -> dict:
+    cutoff_iso: str | None = None
+    if days is not None and days > 0:
+        cutoff_iso = (_utcnow() - timedelta(days=int(days))).replace(microsecond=0).isoformat()
+
+    def _operation() -> list[sqlite3.Row]:
+        with connect() as con:
+            if cutoff_iso:
+                cur = con.execute(
+                    """
+                    SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount_stars), 0) AS total
+                    FROM star_payments
+                    WHERE paid_at >= ?
+                    GROUP BY status
+                    """,
+                    (cutoff_iso,),
+                )
+            else:
+                cur = con.execute(
+                    """
+                    SELECT status, COUNT(*) AS cnt, COALESCE(SUM(amount_stars), 0) AS total
+                    FROM star_payments
+                    GROUP BY status
+                    """
+                )
+            return cur.fetchall()
+
+    rows = _run_with_schema_retry(_operation)
+    summary = {"paid": {"count": 0, "total": 0}, "refunded": {"count": 0, "total": 0}, "canceled": {"count": 0, "total": 0}}
+    for row in rows:
+        status = (row["status"] or "").strip()
+        bucket = summary.setdefault(status, {"count": 0, "total": 0})
+        bucket["count"] = int(row["cnt"])
+        bucket["total"] = int(row["total"])
+    summary.setdefault("failed", {"count": 0, "total": 0})
+    return summary
 
 def log_referral_bonus(referrer: str, referee: str, bonus_days: int) -> None:
     now = _utcnow().isoformat()
@@ -1256,6 +1540,67 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
 
                 _apply_indexes(con)
 
+            star_columns = _table_columns(con, "star_payments")
+            if not star_columns:
+                logger.warning(
+                    "Creating missing 'star_payments' table", extra={"path": str(resolved)}
+                )
+                con.executescript(
+                    """
+                    CREATE TABLE star_payments (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id INTEGER NOT NULL,
+                      username TEXT,
+                      plan TEXT NOT NULL,
+                      amount_stars INTEGER NOT NULL,
+                      charge_id TEXT,
+                      is_subscription INTEGER NOT NULL DEFAULT 0,
+                      status TEXT NOT NULL,
+                      paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      refunded_at TIMESTAMP,
+                      fulfilled_at TIMESTAMP,
+                      delivery_pending INTEGER NOT NULL DEFAULT 0,
+                      delivery_attempts INTEGER NOT NULL DEFAULT 0,
+                      last_delivery_attempt TIMESTAMP,
+                      delivery_error TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_star_payments_user ON star_payments(user_id);
+                    CREATE INDEX IF NOT EXISTS idx_star_payments_charge ON star_payments(charge_id);
+                    CREATE INDEX IF NOT EXISTS idx_star_payments_status ON star_payments(status);
+                    """
+                )
+            else:
+                if "fulfilled_at" not in star_columns:
+                    logger.warning(
+                        "Adding missing 'fulfilled_at' column to star_payments", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE star_payments ADD COLUMN fulfilled_at TIMESTAMP")
+                if "delivery_pending" not in star_columns:
+                    logger.warning(
+                        "Adding missing 'delivery_pending' column to star_payments", extra={"path": str(resolved)}
+                    )
+                    con.execute(
+                        "ALTER TABLE star_payments ADD COLUMN delivery_pending INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "delivery_attempts" not in star_columns:
+                    logger.warning(
+                        "Adding missing 'delivery_attempts' column to star_payments", extra={"path": str(resolved)}
+                    )
+                    con.execute(
+                        "ALTER TABLE star_payments ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "last_delivery_attempt" not in star_columns:
+                    logger.warning(
+                        "Adding missing 'last_delivery_attempt' column to star_payments", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE star_payments ADD COLUMN last_delivery_attempt TIMESTAMP")
+                if "delivery_error" not in star_columns:
+                    logger.warning(
+                        "Adding missing 'delivery_error' column to star_payments", extra={"path": str(resolved)}
+                    )
+                    con.execute("ALTER TABLE star_payments ADD COLUMN delivery_error TEXT")
+                _apply_indexes(con)
+
             if not _table_exists(con, "renewal_notifications"):
                 logger.warning(
                     "Creating missing 'renewal_notifications' table", extra={"path": str(resolved)}
@@ -1308,6 +1653,14 @@ __all__ = [
     "create_payment",
     "get_payment",
     "update_payment_status",
+    "create_star_payment",
+    "get_star_payment",
+    "get_star_payment_by_charge",
+    "update_star_payment_status",
+    "list_pending_star_payments",
+    "mark_star_payment_pending",
+    "mark_star_payment_fulfilled",
+    "star_payments_summary",
     "log_referral_bonus",
     "list_expiring_keys",
     "list_expired_keys",

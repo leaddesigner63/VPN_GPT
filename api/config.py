@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from api.utils.logging import get_logger
 from api.utils.env import resolve_env_path
+from utils.stars import StarSettings, load_star_settings
 
 logger = get_logger("config")
 
@@ -118,6 +119,8 @@ PLAN_DURATIONS = {
     "1y": 365,
 }
 
+STAR_SETTINGS: StarSettings = load_star_settings()
+
 logger.info(
     "Configuration loaded",
     extra={
@@ -131,6 +134,7 @@ logger.info(
         "MORUNE_ENABLED": bool(MORUNE_API_KEY and MORUNE_SHOP_ID),
         "MORUNE_BASE_URL": MORUNE_BASE_URL,
         "MORUNE_DEFAULT_CURRENCY": MORUNE_DEFAULT_CURRENCY,
+        "STARS_ENABLED": STAR_SETTINGS.enabled,
     },
 )
 
@@ -178,4 +182,5 @@ __all__ = [
     "PAYMENTS_DEFAULT_SOURCE",
     "EXPIRED_KEY_POLL_SECONDS",
     "RENEWAL_NOTIFICATION_POLL_SECONDS",
+    "STAR_SETTINGS",
 ]
