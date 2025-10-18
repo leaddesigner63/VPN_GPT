@@ -655,14 +655,50 @@
       }
 
       async function authenticateWithPassword(password) {
-        const url = buildApiUrl("/admin/auth");
         const body = new URLSearchParams();
         body.set("password", password);
 
+        const baseValue = resolveBaseUrl();
+        let hasApiSegment = false;
+
+        try {
+          const parsedBase = new URL(baseValue);
+          const path = parsedBase.pathname || "/";
+          hasApiSegment = /(^|\/)api(\/|$)/.test(path);
+        } catch (error) {
+          hasApiSegment = false;
+        }
+
+        const candidatePaths = ["/admin/auth"];
+        if (!hasApiSegment) {
+          candidatePaths.push("/api/admin/auth");
+        }
+
+        let lastError = null;
+
+        for (const path of candidatePaths) {
+          const url = buildApiUrl(path);
+
+          try {
+            return await submitAdminPassword(url, body);
+          } catch (error) {
+            if (error && (error.status === 404 || error.status === 405)) {
+              lastError = error;
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        throw lastError || new Error("Не удалось авторизоваться");
+      }
+
+      async function submitAdminPassword(url, body) {
         const response = await fetch(url.toString(), {
           method: "POST",
           headers: {
             Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           },
           body,
         });
@@ -678,7 +714,10 @@
           const detail =
             (payload && (payload.detail || payload.error)) ||
             `Ошибка ${response.status}`;
-          throw new Error(detail);
+          const failure = new Error(detail);
+          failure.status = response.status;
+          failure.payload = payload;
+          throw failure;
         }
 
         if (!payload || payload.ok !== true) {
