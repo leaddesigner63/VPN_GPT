@@ -36,6 +36,7 @@ def configured_env(tmp_path, monkeypatch) -> EnvConfig:
                 "PLANS=1m:180,3m:450",
                 "ADMIN_TOKEN=secret",
                 "INTERNAL_TOKEN=service",
+                "ADMIN_PANEL_PASSWORD=panelpass",
                 "REFERRAL_BONUS_DAYS=30",
             ]
         ),
@@ -186,6 +187,24 @@ def test_renew_creates_new_key(api_app, configured_env):
     keys = _fetch_keys(configured_env.database, "dave")
     assert len(keys) == 1
     assert keys[0]["trial"] == 0
+
+
+def test_admin_auth_endpoint(configured_env):
+    import api.main as api_main
+    import importlib
+
+    importlib.reload(api_main)
+
+    with TestClient(api_main.app) as client:
+        ok = client.post("/admin/auth", json={"password": "panelpass"})
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body["ok"] is True
+        assert body["admin_token"] == "secret"
+
+        bad = client.post("/admin/auth", json={"password": "wrong"})
+        assert bad.status_code == 401
+        assert bad.json()["detail"] == "Неверный пароль"
 
 
 def test_payment_confirmation_extends_subscription(api_app, configured_env):
