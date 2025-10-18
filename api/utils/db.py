@@ -450,6 +450,86 @@ def list_broadcast_targets() -> list[dict]:
     return _run_with_schema_retry(_operation)
 
 
+def get_users_summary() -> list[dict]:
+    """Return aggregated statistics for all known Telegram users."""
+
+    def _operation() -> list[dict]:
+        with connect() as con:
+            con.row_factory = sqlite3.Row
+            cur = con.execute(
+                """
+                WITH key_stats AS (
+                    SELECT
+                        username,
+                        COUNT(*) AS total_keys,
+                        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS active_keys,
+                        MAX(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS has_trial_key,
+                        MAX(issued_at) AS last_key_issued_at,
+                        MAX(expires_at) AS last_key_expires_at
+                    FROM vpn_keys
+                    GROUP BY username
+                ),
+                payment_stats AS (
+                    SELECT
+                        username,
+                        COUNT(*) AS total_payments,
+                        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_payments,
+                        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS paid_amount,
+                        MAX(CASE WHEN status = 'paid' THEN paid_at ELSE NULL END) AS last_payment_at
+                    FROM payments
+                    GROUP BY username
+                )
+                SELECT
+                    u.username,
+                    u.chat_id,
+                    u.referrer,
+                    u.created_at,
+                    u.updated_at,
+                    COALESCE(k.total_keys, 0) AS total_keys,
+                    COALESCE(k.active_keys, 0) AS active_keys,
+                    COALESCE(k.has_trial_key, 0) AS has_trial_key,
+                    k.last_key_issued_at,
+                    k.last_key_expires_at,
+                    COALESCE(p.total_payments, 0) AS total_payments,
+                    COALESCE(p.paid_payments, 0) AS paid_payments,
+                    COALESCE(p.paid_amount, 0) AS paid_amount,
+                    p.last_payment_at
+                FROM tg_users AS u
+                LEFT JOIN key_stats AS k ON k.username = u.username
+                LEFT JOIN payment_stats AS p ON p.username = u.username
+                ORDER BY u.updated_at DESC
+                """
+            )
+            rows = cur.fetchall()
+
+        summary: list[dict] = []
+        for row in rows:
+            chat_id = row["chat_id"]
+            referrer = row["referrer"] or None
+            summary.append(
+                {
+                    "username": row["username"],
+                    "chat_id": int(chat_id) if chat_id not in (None, 0) else None,
+                    "referrer": referrer,
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "total_keys": int(row["total_keys"] or 0),
+                    "active_keys": int(row["active_keys"] or 0),
+                    "has_trial_key": bool(row["has_trial_key"]),
+                    "last_key_issued_at": row["last_key_issued_at"],
+                    "last_key_expires_at": row["last_key_expires_at"],
+                    "total_payments": int(row["total_payments"] or 0),
+                    "paid_payments": int(row["paid_payments"] or 0),
+                    "paid_amount": int(row["paid_amount"] or 0),
+                    "last_payment_at": row["last_payment_at"],
+                }
+            )
+
+        return summary
+
+    return _run_with_schema_retry(_operation)
+
+
 def list_user_keys(username: str) -> list[dict]:
     def _operation() -> list[dict]:
         with connect() as con:
@@ -1645,6 +1725,7 @@ __all__ = [
     "user_has_trial",
     "get_active_key",
     "list_broadcast_targets",
+    "get_users_summary",
     "list_user_keys",
     "create_vpn_key",
     "update_key_expiry",

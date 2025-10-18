@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,8 @@ def configure_test_xray(tmp_path, monkeypatch):
 
     monkeypatch.setenv("XRAY_CONFIG", str(config_path))
     monkeypatch.setenv("XRAY_SERVICE", "xray-test")
+    monkeypatch.setenv("GPT_API_KEY", os.getenv("GPT_API_KEY", "test-key"))
+    monkeypatch.setenv("RENEWAL_NOTIFICATION_GPT_API_KEY", os.getenv("RENEWAL_NOTIFICATION_GPT_API_KEY", "test-key"))
 
     from api.utils import xray as xray_module
 
