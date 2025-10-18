@@ -34,6 +34,7 @@ def morune_app(tmp_path, monkeypatch) -> MoruneTestEnv:
                 "MORUNE_API_KEY=test-api",
                 "MORUNE_SHOP_ID=shop-123",
                 "MORUNE_WEBHOOK_SECRET=hook-secret",
+                "ADMIN_PANEL_PASSWORD=panelpass",
             ]
         ),
         encoding="utf-8",
@@ -46,6 +47,7 @@ def morune_app(tmp_path, monkeypatch) -> MoruneTestEnv:
     monkeypatch.setenv("MORUNE_API_KEY", "test-api")
     monkeypatch.setenv("MORUNE_SHOP_ID", "shop-123")
     monkeypatch.setenv("MORUNE_WEBHOOK_SECRET", "hook-secret")
+    monkeypatch.setenv("ADMIN_PANEL_PASSWORD", "panelpass")
 
     import api.config as config_module
     import api.utils.db as db_module

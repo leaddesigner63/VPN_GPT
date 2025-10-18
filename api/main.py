@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from importlib import resources
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -93,8 +94,14 @@ app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(stars.router)
 
 
+_SITE_ADMIN_PAGE = Path(__file__).resolve().parents[2] / "site" / "admin.html"
+
+
 def _load_admin_panel_html() -> str:
     """Return the pre-built admin panel HTML."""
+
+    if _SITE_ADMIN_PAGE.exists():
+        return _SITE_ADMIN_PAGE.read_text(encoding="utf-8")
 
     html_path = resources.files("api.admin_panel").joinpath("admin_panel.html")
     return html_path.read_text(encoding="utf-8")

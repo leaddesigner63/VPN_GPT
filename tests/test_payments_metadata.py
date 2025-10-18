@@ -14,6 +14,7 @@ def test_prepare_metadata_serialises_complex_values(monkeypatch) -> None:
     monkeypatch.setenv("PLANS", "1m:180")
     monkeypatch.setenv("BOT_TOKEN", "token")
     monkeypatch.setenv("GPT_API_KEY", "gpt")
+    monkeypatch.setenv("ADMIN_PANEL_PASSWORD", "panelpass")
 
     import api.config as config_module
 
