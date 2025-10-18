@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -35,6 +37,29 @@ class ReferralStatsResponse(BaseModel):
     username: str
     total_referrals: int
     total_days: int
+
+
+class UserSummary(BaseModel):
+    username: str
+    chat_id: int | None = None
+    referrer: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    total_keys: int = 0
+    active_keys: int = 0
+    has_trial_key: bool = False
+    last_key_issued_at: datetime | None = None
+    last_key_expires_at: datetime | None = None
+    total_payments: int = 0
+    paid_payments: int = 0
+    paid_amount: int = 0
+    last_payment_at: datetime | None = None
+
+
+class UsersSummaryResponse(BaseModel):
+    ok: bool = True
+    total: int
+    users: list[UserSummary]
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -87,3 +112,9 @@ def referral_stats(username: str, _: None = Depends(require_service_token)):
         total_referrals=int(stats.get("total_referrals", 0)),
         total_days=int(stats.get("total_days", 0)),
     )
+
+
+@router.get("/summary", response_model=UsersSummaryResponse)
+def users_summary(_: None = Depends(require_service_token)):
+    summary = db.get_users_summary()
+    return UsersSummaryResponse(total=len(summary), users=summary)
