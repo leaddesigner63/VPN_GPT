@@ -612,9 +612,23 @@
         }
       }
 
+      function buildApiUrl(pathname) {
+        const baseValue = resolveBaseUrl();
+        let url;
+        try {
+          url = new URL(baseValue);
+        } catch (error) {
+          url = new URL(window.location.origin);
+        }
+
+        const basePath = url.pathname.replace(/\/+$/, "");
+        const extraPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+        url.pathname = `${basePath}${extraPath}` || "/";
+        return url;
+      }
+
       async function authenticateWithPassword(password) {
-        const baseUrl = resolveBaseUrl();
-        const url = new URL("/admin/auth", baseUrl);
+        const url = buildApiUrl("/admin/auth");
         const response = await fetch(url.toString(), {
           method: "POST",
           headers: {
@@ -673,7 +687,8 @@
           if (!silent) {
             setStatus("Загружаем OpenAPI-схему…", "info");
           }
-          const response = await fetch("/openapi.json", { cache: "no-store" });
+          const url = buildApiUrl("/openapi.json");
+          const response = await fetch(url.toString(), { cache: "no-store" });
           if (!response.ok) {
             throw new Error(`Не удалось загрузить схему: ${response.status}`);
           }
@@ -1052,7 +1067,6 @@
       async function submitRequest(form, statusEl, preEl) {
         const method = form.dataset.method;
         const path = form.dataset.path;
-        const baseUrl = resolveBaseUrl();
         let urlPath = path;
         const pathInputs = form.querySelectorAll('[data-param-type="path"]');
         for (const input of pathInputs) {
@@ -1064,7 +1078,7 @@
           }
           urlPath = urlPath.replace(`{${input.name}}`, encodeURIComponent(value));
         }
-        const url = new URL(urlPath, baseUrl);
+        const url = buildApiUrl(urlPath);
         const queryInputs = form.querySelectorAll('[data-param-type="query"]');
         const query = new URLSearchParams(url.search);
         for (const input of queryInputs) {
