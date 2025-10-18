@@ -196,6 +196,24 @@ def test_admin_auth_endpoint(configured_env):
     importlib.reload(api_main)
 
     with TestClient(api_main.app) as client:
+        preflight = client.options("/admin/auth")
+        assert preflight.status_code == 204
+
+        cors_preflight = client.options(
+            "/admin/auth",
+            headers={
+                "Origin": "https://vpn-gpt.store",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert cors_preflight.status_code in (200, 204)
+        allow_methods = cors_preflight.headers["access-control-allow-methods"].upper()
+        assert "POST" in allow_methods.split(", ")
+        assert "content-type" in cors_preflight.headers[
+            "access-control-allow-headers"
+        ].lower()
+
         ok = client.post("/admin/auth", json={"password": "panelpass"})
         assert ok.status_code == 200
         body = ok.json()

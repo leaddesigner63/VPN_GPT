@@ -8,7 +8,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from api import config
@@ -57,6 +57,19 @@ def authenticate_admin(payload: AdminAuthPayload) -> AdminAuthResponse:
 
     logger.info("Admin authentication successful")
     return AdminAuthResponse(ok=True, admin_token=config.ADMIN_TOKEN)
+
+
+@router.options("/auth", include_in_schema=False)
+def admin_auth_preflight() -> Response:
+    """Handle CORS pre-flight requests for the password auth endpoint."""
+
+    response = Response(status_code=204)
+    response.headers["Allow"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Accept"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
 
 
 @router.post("/backup_db")
