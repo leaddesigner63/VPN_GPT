@@ -188,12 +188,21 @@ def custom_openapi() -> dict[str, Any]:
         routes=app.routes,
     )
 
-    server_url = os.getenv("OPENAPI_SERVER_URL")
+    default_server_url = os.getenv(
+        "DEFAULT_OPENAPI_SERVER_URL", "https://vpn-gpt.store/api"
+    ).strip()
+    configured_server_url = os.getenv("OPENAPI_SERVER_URL", "").strip()
+    server_url = configured_server_url or default_server_url
+
     if server_url:
-        openapi_schema["servers"] = [
-            {"url": server_url, "description": "Production deployment"}
-        ]
-        logger.info("Configured OpenAPI server override: %s", server_url)
+        description = (
+            "Configured deployment" if configured_server_url else "Production deployment"
+        )
+        openapi_schema["servers"] = [{"url": server_url, "description": description}]
+        if configured_server_url:
+            logger.info("Configured OpenAPI server override: %s", server_url)
+        else:
+            logger.info("Using default OpenAPI server URL: %s", server_url)
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
