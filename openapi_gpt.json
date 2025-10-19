@@ -851,18 +851,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  },
-                  "type": "object",
-                  "title": "Response Backup Db Admin Backup Db Post"
+                  "$ref": "#/components/schemas/BackupDbResponse"
                 }
               }
             }
@@ -923,6 +912,27 @@
   },
   "components": {
     "schemas": {
+      "BackupDbResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "description": "Indicates that the backup operation completed successfully."
+          },
+          "backup": {
+            "type": "string",
+            "title": "Backup",
+            "description": "Absolute path to the generated SQLite backup file."
+          }
+        },
+        "required": [
+          "ok",
+          "backup"
+        ],
+        "additionalProperties": false,
+        "title": "BackupDbResponse"
+      },
       "ConfirmPaymentRequest": {
         "properties": {
           "payment_id": {
