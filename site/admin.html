@@ -147,7 +147,7 @@
 
       .operations-panel {
         display: grid;
-        gap: clamp(1.5rem, 1.2rem + 0.8vw, 2rem);
+        gap: 1.25rem;
       }
 
       .operations-meta {
@@ -156,17 +156,97 @@
         font-size: 0.95rem;
       }
 
-      .operation-group {
+      .operations-layout {
         display: grid;
-        gap: 0.85rem;
+        gap: 1rem;
       }
 
-      .operation-group h2 {
-        margin: 0;
-        font-size: 1.1rem;
-        letter-spacing: 0.05em;
+      @media (min-width: 880px) {
+        .operations-layout {
+          grid-template-columns: minmax(220px, 280px) 1fr;
+          align-items: start;
+        }
+      }
+
+      .operations-menu {
+        display: grid;
+        gap: 0.6rem;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 16px;
+        padding: 1rem;
+      }
+
+      .operations-menu h2 {
+        margin: 0 0 0.25rem;
+        font-size: 0.95rem;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: rgba(226, 232, 240, 0.8);
+        color: rgba(226, 232, 240, 0.75);
+      }
+
+      .menu-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .menu-item {
+        margin: 0;
+      }
+
+      .menu-button {
+        width: 100%;
+        border: 1px solid transparent;
+        background: rgba(148, 163, 184, 0.08);
+        color: inherit;
+        border-radius: 12px;
+        padding: 0.65rem 0.9rem;
+        text-align: left;
+        cursor: pointer;
+        transition: border 150ms ease, background 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+      }
+
+      .menu-button:hover,
+      .menu-button:focus-visible {
+        outline: none;
+        border-color: rgba(56, 189, 248, 0.5);
+        background: rgba(56, 189, 248, 0.15);
+        transform: translateX(2px);
+        box-shadow: 0 6px 18px rgba(14, 165, 233, 0.18);
+      }
+
+      .menu-button[aria-pressed="true"] {
+        background: rgba(56, 189, 248, 0.2);
+        border-color: rgba(56, 189, 248, 0.6);
+        box-shadow: 0 8px 22px rgba(14, 165, 233, 0.25);
+      }
+
+      .menu-button .menu-label {
+        display: block;
+        font-weight: 600;
+      }
+
+      .menu-button .menu-meta {
+        display: block;
+        font-size: 0.82rem;
+        color: rgba(203, 213, 225, 0.8);
+        margin-top: 0.2rem;
+      }
+
+      .operations-content {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .operations-content h2 {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(226, 232, 240, 0.78);
       }
 
       .operation-buttons {
@@ -442,6 +522,77 @@
         gap: 0.55rem;
       }
 
+      .response-view {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 14px;
+        padding: 1rem;
+        display: grid;
+        gap: 0.75rem;
+        font-size: 0.95rem;
+      }
+
+      .response-view .empty-response {
+        color: rgba(203, 213, 225, 0.75);
+      }
+
+      .response-dl {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .response-row {
+        display: grid;
+        gap: 0.35rem;
+        padding: 0.55rem 0.75rem;
+        border-radius: 10px;
+        background: rgba(148, 163, 184, 0.08);
+      }
+
+      .response-highlight {
+        background: rgba(56, 189, 248, 0.16);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+      }
+
+      .response-row-title {
+        font-weight: 600;
+        font-size: 0.92rem;
+        letter-spacing: 0.02em;
+      }
+
+      .response-row-value {
+        color: rgba(226, 232, 240, 0.9);
+      }
+
+      .response-primitive {
+        display: inline-block;
+        word-break: break-word;
+      }
+
+      .response-list {
+        display: grid;
+        gap: 0.5rem;
+        padding-left: 1rem;
+        margin: 0;
+        list-style: none;
+      }
+
+      .response-list-item {
+        padding: 0.5rem 0.75rem;
+        border-radius: 10px;
+        background: rgba(148, 163, 184, 0.08);
+      }
+
+      .response-multi {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .operations-hint {
+        font-size: 0.85rem;
+        color: rgba(203, 213, 225, 0.78);
+      }
+
       .status {
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -584,7 +735,12 @@
         <p class="operations-meta" id="results-summary">Эндпоинты пока не загружены.</p>
       </section>
 
-      <section class="operations-panel" id="operations"></section>
+      <section class="operations-panel">
+        <div class="operations-layout" id="operations">
+          <nav class="operations-menu" aria-label="Разделы действий" id="operations-menu"></nav>
+          <div class="operations-content" id="operations-content"></div>
+        </div>
+      </section>
 
       <div id="status-bar" class="status-bar" role="status" aria-live="polite"></div>
     </main>
@@ -604,7 +760,7 @@
           </div>
           <div class="response">
             <div class="status" id="operation-status">Ответ ещё не запрошен</div>
-            <pre id="operation-response"></pre>
+            <div class="response-view" id="operation-response"></div>
           </div>
         </form>
       </div>
@@ -640,7 +796,9 @@
         search: document.getElementById("operation-search"),
         refresh: document.getElementById("refresh-schema"),
         clearSearch: document.getElementById("clear-search"),
-        operations: document.getElementById("operations"),
+        operationsLayout: document.getElementById("operations"),
+        operationsMenu: document.getElementById("operations-menu"),
+        operationsContent: document.getElementById("operations-content"),
         statusBar: document.getElementById("status-bar"),
         resultsSummary: document.getElementById("results-summary"),
         authOverlay: document.getElementById("auth-overlay"),
@@ -666,6 +824,7 @@
         filters: {
           query: "",
         },
+        activeTag: null,
         session: {
           authenticated: false,
           adminToken: "",
@@ -923,8 +1082,17 @@
         }
       }
       function renderOperations() {
-        const container = selectors.operations;
-        container.innerHTML = "";
+        if (!selectors.operationsLayout) return;
+
+        const menu = selectors.operationsMenu;
+        const content = selectors.operationsContent;
+
+        if (!menu || !content) {
+          return;
+        }
+
+        menu.innerHTML = "";
+        content.innerHTML = "";
 
         const query = (state.filters.query || "").trim().toLowerCase();
         const filtered = !query
@@ -947,12 +1115,13 @@
         updateResultsSummary(state.operations.length, filtered.length);
 
         if (!filtered.length) {
-          const empty = document.createElement("div");
-          empty.className = "empty-state";
-          empty.textContent = state.operations.length
+          state.activeTag = null;
+          const placeholder = document.createElement("div");
+          placeholder.className = "empty-state";
+          placeholder.textContent = state.operations.length
             ? "Ничего не найдено. Измените текст поиска."
             : "Список действий ещё не загружен. Авторизуйтесь и обновите схему.";
-          container.appendChild(empty);
+          content.appendChild(placeholder);
           return;
         }
 
@@ -965,52 +1134,105 @@
           groups.get(key).push(operation);
         });
 
-        groups.forEach((operations, tag) => {
-          const section = document.createElement("section");
-          section.className = "operation-group";
+        const tags = Array.from(groups.keys());
 
-          const heading = document.createElement("h2");
-          heading.textContent = tag;
-          section.appendChild(heading);
+        if (!state.activeTag || !groups.has(state.activeTag)) {
+          state.activeTag = tags[0];
+        }
 
-          const grid = document.createElement("div");
-          grid.className = "operation-buttons";
+        const menuHeading = document.createElement("h2");
+        menuHeading.textContent = "Разделы";
+        menu.appendChild(menuHeading);
 
-          operations.forEach((operation) => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "operation-button";
-            button.dataset.index = operation.index;
+        const list = document.createElement("ul");
+        list.className = "menu-list";
+        menu.appendChild(list);
 
-            const label = document.createElement("span");
-            label.className = "label";
-            label.textContent = operation.label;
-            button.appendChild(label);
+        tags.forEach((tag) => {
+          const item = document.createElement("li");
+          item.className = "menu-item";
 
-            const hint = document.createElement("span");
-            hint.className = "hint";
-            hint.textContent = `${operation.method} ${operation.path}`;
-            button.appendChild(hint);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "menu-button";
+          button.setAttribute("aria-pressed", String(state.activeTag === tag));
 
-            if (operation.description) {
-              const desc = document.createElement("span");
-              desc.className = "description";
-              desc.textContent = operation.description;
-              button.appendChild(desc);
+          const label = document.createElement("span");
+          label.className = "menu-label";
+          label.textContent = tag;
+          button.appendChild(label);
+
+          const meta = document.createElement("span");
+          meta.className = "menu-meta";
+          meta.textContent = `${groups.get(tag).length} действий`;
+          button.appendChild(meta);
+
+          button.addEventListener("click", () => {
+            if (state.activeTag === tag) {
+              return;
             }
-
-            const badge = document.createElement("span");
-            badge.className = `method-badge method-${operation.method.toLowerCase()}`;
-            badge.textContent = operation.method;
-            button.appendChild(badge);
-
-            button.addEventListener("click", () => openOperationModal(operation));
-
-            grid.appendChild(button);
+            state.activeTag = tag;
+            renderOperations();
           });
 
-          section.appendChild(grid);
-          container.appendChild(section);
+          item.appendChild(button);
+          list.appendChild(item);
+        });
+
+        const currentOperations = groups.get(state.activeTag) || [];
+
+        const sectionHeading = document.createElement("h2");
+        sectionHeading.textContent = state.activeTag;
+        content.appendChild(sectionHeading);
+
+        if (!currentOperations.length) {
+          const emptySection = document.createElement("div");
+          emptySection.className = "empty-state";
+          emptySection.textContent = "В этом разделе действий не найдено.";
+          content.appendChild(emptySection);
+          return;
+        }
+
+        const hint = document.createElement("p");
+        hint.className = "operations-hint";
+        hint.textContent = "Выберите функцию из списка, чтобы открыть окно с подробностями.";
+        content.appendChild(hint);
+
+        const grid = document.createElement("div");
+        grid.className = "operation-buttons";
+        content.appendChild(grid);
+
+        currentOperations.forEach((operation) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "operation-button";
+          button.dataset.index = operation.index;
+
+          const label = document.createElement("span");
+          label.className = "label";
+          label.textContent = operation.label;
+          button.appendChild(label);
+
+          const hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = `${operation.method} ${operation.path}`;
+          button.appendChild(hint);
+
+          if (operation.description) {
+            const desc = document.createElement("span");
+            desc.className = "description";
+            desc.textContent = operation.description;
+            button.appendChild(desc);
+          }
+
+          const badge = document.createElement("span");
+          badge.className = `method-badge method-${operation.method.toLowerCase()}`;
+          badge.textContent = operation.method;
+          button.appendChild(badge);
+
+          button.addEventListener("click", () => openOperationModal(operation));
+
+          grid.appendChild(button);
         });
       }
 
@@ -1021,7 +1243,11 @@
         selectors.modalDescription.textContent = operation.description || "";
         selectors.operationStatus.textContent = "Ответ ещё не запрошен";
         selectors.operationStatus.className = "status";
-        selectors.operationResponse.textContent = "";
+        selectors.operationResponse.innerHTML = "";
+        const placeholder = document.createElement("p");
+        placeholder.className = "empty-response";
+        placeholder.textContent = "После выполнения запроса здесь появится результат.";
+        selectors.operationResponse.appendChild(placeholder);
 
         selectors.operationForm.dataset.method = operation.method;
         selectors.operationForm.dataset.path = operation.path;
@@ -1226,7 +1452,270 @@
           return "";
         }
       }
-      async function submitRequest(form, statusEl, preEl) {
+
+      function renderFriendlyResponse(container, rawText, metadata = {}) {
+        container.innerHTML = "";
+
+        const text = (rawText || "").trim();
+        if (!text) {
+          container.appendChild(createEmptyResponse("Ответ пустой."));
+          return;
+        }
+
+        const looksLikeJson = (metadata.contentType || "").includes("json");
+        let parsed;
+        let parsedSuccessfully = false;
+
+        if (looksLikeJson) {
+          try {
+            parsed = JSON.parse(text);
+            parsedSuccessfully = true;
+          } catch (error) {
+            parsedSuccessfully = false;
+          }
+        } else {
+          try {
+            parsed = JSON.parse(text);
+            parsedSuccessfully = true;
+          } catch (error) {
+            parsedSuccessfully = false;
+          }
+        }
+
+        if (!parsedSuccessfully) {
+          container.appendChild(createPlainResponseBlock("Ответ сервера", text));
+          return;
+        }
+
+        if (Array.isArray(parsed)) {
+          container.appendChild(buildArraySummary(parsed));
+          container.appendChild(buildReadableBlock(parsed));
+          return;
+        }
+
+        if (parsed && typeof parsed === "object") {
+          const summary = buildResponseSummary(parsed);
+          if (summary) {
+            container.appendChild(summary);
+          }
+          container.appendChild(buildReadableBlock(parsed));
+          return;
+        }
+
+        container.appendChild(createPlainResponseBlock("Ответ сервера", formatPrimitive(parsed)));
+      }
+
+      function createEmptyResponse(message) {
+        const paragraph = document.createElement("p");
+        paragraph.className = "empty-response";
+        paragraph.textContent = message;
+        return paragraph;
+      }
+
+      function createPlainResponseBlock(title, value) {
+        const block = document.createElement("div");
+        block.className = "response-row";
+
+        const heading = document.createElement("div");
+        heading.className = "response-row-title";
+        heading.textContent = title;
+        block.appendChild(heading);
+
+        const body = document.createElement("div");
+        body.className = "response-row-value";
+
+        const span = document.createElement("span");
+        span.className = "response-primitive";
+        span.textContent = value;
+        body.appendChild(span);
+
+        block.appendChild(body);
+        return block;
+      }
+
+      function buildResponseSummary(data) {
+        if (!data || typeof data !== "object") {
+          return null;
+        }
+
+        const pieces = [];
+        const message = typeof data.message === "string" ? data.message.trim() : "";
+        const detail = typeof data.detail === "string" ? data.detail.trim() : "";
+        const status = data.status ?? data.result ?? data.state;
+        const code = data.code ?? data.error_code;
+
+        if (message) {
+          pieces.push(message);
+        }
+
+        if (detail && detail !== message) {
+          pieces.push(detail);
+        }
+
+        if (status !== undefined && status !== null && status !== "") {
+          pieces.push(`Статус: ${status}`);
+        }
+
+        if (code !== undefined && code !== null && code !== "") {
+          pieces.push(`Код: ${code}`);
+        }
+
+        if (!pieces.length) {
+          return null;
+        }
+
+        const row = document.createElement("div");
+        row.className = "response-row response-highlight";
+
+        const title = document.createElement("div");
+        title.className = "response-row-title";
+        title.textContent = "Кратко";
+        row.appendChild(title);
+
+        const value = document.createElement("div");
+        value.className = "response-row-value";
+        const span = document.createElement("span");
+        span.className = "response-primitive";
+        span.textContent = pieces.join(" · ");
+        value.appendChild(span);
+        row.appendChild(value);
+
+        return row;
+      }
+
+      function buildArraySummary(array) {
+        const row = document.createElement("div");
+        row.className = "response-row response-highlight";
+
+        const title = document.createElement("div");
+        title.className = "response-row-title";
+        title.textContent = "Количество записей";
+        row.appendChild(title);
+
+        const value = document.createElement("div");
+        value.className = "response-row-value";
+        const span = document.createElement("span");
+        span.className = "response-primitive";
+        span.textContent = array.length ? `${array.length} шт.` : "0";
+        value.appendChild(span);
+        row.appendChild(value);
+
+        return row;
+      }
+
+      function buildReadableBlock(value, depth = 0) {
+        if (value === null || value === undefined) {
+          const span = document.createElement("span");
+          span.className = "response-primitive";
+          span.textContent = "Нет данных";
+          return span;
+        }
+
+        if (Array.isArray(value)) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "response-multi";
+
+          if (!value.length) {
+            wrapper.appendChild(createEmptyResponse("Список пуст."));
+            return wrapper;
+          }
+
+          const list = document.createElement("ul");
+          list.className = "response-list";
+
+          value.forEach((item, index) => {
+            const listItem = document.createElement("li");
+            listItem.className = "response-list-item";
+
+            const header = document.createElement("div");
+            header.className = "response-row-title";
+            header.textContent = `Элемент ${index + 1}`;
+            listItem.appendChild(header);
+
+            const content = document.createElement("div");
+            content.className = "response-row-value";
+            content.appendChild(buildReadableBlock(item, depth + 1));
+            listItem.appendChild(content);
+
+            list.appendChild(listItem);
+          });
+
+          wrapper.appendChild(list);
+          return wrapper;
+        }
+
+        if (typeof value === "object") {
+          const entries = Object.entries(value);
+          if (!entries.length) {
+            const emptyWrapper = document.createElement("div");
+            emptyWrapper.className = "response-multi";
+            emptyWrapper.appendChild(createEmptyResponse("Данные отсутствуют"));
+            return emptyWrapper;
+          }
+
+          const container = document.createElement("div");
+          container.className = "response-dl";
+
+          entries.forEach(([key, val]) => {
+            const row = document.createElement("div");
+            row.className = "response-row";
+
+            const title = document.createElement("div");
+            title.className = "response-row-title";
+            title.textContent = humanizeLabel(key);
+            row.appendChild(title);
+
+            const cell = document.createElement("div");
+            cell.className = "response-row-value";
+            cell.appendChild(buildReadableBlock(val, depth + 1));
+            row.appendChild(cell);
+
+            container.appendChild(row);
+          });
+
+          return container;
+        }
+
+        const span = document.createElement("span");
+        span.className = "response-primitive";
+        span.textContent = formatPrimitive(value);
+        return span;
+      }
+
+      function humanizeLabel(key) {
+        if (!key) {
+          return "Поле";
+        }
+        const spaced = key
+          .replace(/[_-]+/g, " ")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!spaced) {
+          return "Поле";
+        }
+        return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+      }
+
+      function formatPrimitive(value) {
+        if (typeof value === "boolean") {
+          return value ? "Да" : "Нет";
+        }
+        if (typeof value === "number") {
+          return Number.isFinite(value)
+            ? new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 4 }).format(value)
+            : String(value);
+        }
+        if (value === null || value === undefined) {
+          return "Нет данных";
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          return trimmed || "—";
+        }
+        return String(value);
+      }
+      async function submitRequest(form, statusEl, responseContainer) {
         const method = form.dataset.method;
         const path = form.dataset.path;
         let urlPath = path;
@@ -1299,23 +1788,29 @@
 
         statusEl.className = "status pending";
         statusEl.textContent = "Выполняем запрос…";
-        preEl.textContent = "";
+        responseContainer.innerHTML = "";
+        const waiting = document.createElement("p");
+        waiting.className = "empty-response";
+        waiting.textContent = "Ожидаем ответ от сервера…";
+        responseContainer.appendChild(waiting);
 
         try {
           const response = await fetch(url.toString(), requestInit);
           const text = await response.text();
-          let formatted = text;
-          try {
-            formatted = JSON.stringify(JSON.parse(text), null, 2);
-          } catch (error) {}
           const statusLine = `${response.status} ${response.statusText || ""}`.trim();
           statusEl.className = response.ok ? "status ok" : "status error";
           statusEl.textContent = `Ответ: ${statusLine}`;
-          preEl.textContent = formatted || "(пустой ответ)";
+          renderFriendlyResponse(responseContainer, text, {
+            contentType: response.headers.get("Content-Type") || "",
+          });
         } catch (error) {
           statusEl.className = "status error";
           statusEl.textContent = `Ошибка запроса: ${error.message}`;
-          preEl.textContent = "";
+          responseContainer.innerHTML = "";
+          const message = document.createElement("p");
+          message.className = "empty-response";
+          message.textContent = "Не удалось получить ответ от сервера.";
+          responseContainer.appendChild(message);
         }
       }
 
