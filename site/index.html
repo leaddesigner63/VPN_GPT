@@ -39,6 +39,7 @@
     footer{padding:40px 0; color:var(--muted); font-size:14px; text-align:center; border-top:1px solid rgba(255,255,255,.05)}
     .footer-links{margin-top:20px}
     .footer-links a{margin:0 8px; font-size:13px; color:var(--muted)}
+    .is-hidden{display:none !important}
   </style>
 </head>
 <body>
@@ -57,7 +58,7 @@
   <section class="hero">
     <div class="container">
       <h1>Первый VPN, созданный нейросетью</h1>
-      <p>Пройди 24-часовой тест за 20⭐ и подключи безопасный интернет без ограничений.</p>
+      <p>Пройди 24-часовой тест за <span data-plan-price="test_1d">20</span>⭐ и подключи безопасный интернет без ограничений.</p>
       <a class="btn" href="https://t.me/dobriyvpn_bot" target="_blank" rel="noopener">Попробовать в Telegram</a>
       <!-- Кнопка оплаты для перехода на страницу оплаты -->
       <br/>
@@ -112,21 +113,21 @@
       <h2 class="section-title">Тарифы</h2>
       <p class="section-sub">Обновлённая сетка тарифов: больше скорости и премиальные маршруты в каждом плане. Все подписки включают поддержку AI-помощника и неограниченный трафик.</p>
       <div class="grid">
-        <div class="card">
+        <div class="card" data-plan-card="1m">
           <h3>1 месяц</h3>
-          <p>120⭐ · полный доступ к премиальным узлам и поддержке 24/7. Отлично подходит для коротких поездок или теста сервиса.</p>
+          <p><span data-plan-price="1m">120</span>⭐ · полный доступ к премиальным узлам и поддержке 24/7. Отлично подходит для коротких поездок или теста сервиса.</p>
         </div>
-        <div class="card">
+        <div class="card" data-plan-card="6m">
           <h3>6 месяцев</h3>
-          <p>600⭐ · экономия 17% по сравнению с помесячной оплатой, идеален для стабильной работы и стриминга.</p>
+          <p><span data-plan-price="6m">600</span>⭐ · экономия 17% по сравнению с помесячной оплатой, идеален для стабильной работы и стриминга.</p>
         </div>
-        <div class="card">
+        <div class="card" data-plan-card="1y">
           <h3>12 месяцев</h3>
-          <p>1100⭐ · максимальная выгода (экономия 24%) и приоритетный саппорт. Лучший вариант для бизнеса и семьи.</p>
+          <p><span data-plan-price="1y">1100</span>⭐ · максимальная выгода (экономия 24%) и приоритетный саппорт. Лучший вариант для бизнеса и семьи.</p>
         </div>
       </div>
-      <p class="muted" style="margin-top:24px">Тестовый доступ на 24 часа остаётся по цене 20⭐. Существующие клиенты пользуются активными ключами до конца обещанного периода, после чего переходят на обновлённую сетку.</p>
-      <a class="btn" href="https://t.me/dobriyvpn_bot" target="_blank" rel="noopener" style="margin-top:40px;display:inline-block">Начать тест за 20⭐</a>
+      <p class="muted" style="margin-top:24px">Тестовый доступ на 24 часа остаётся по цене <span data-plan-price="test_1d">20</span>⭐. Существующие клиенты пользуются активными ключами до конца обещанного периода, после чего переходят на обновлённую сетку.</p>
+      <a class="btn" href="https://t.me/dobriyvpn_bot" target="_blank" rel="noopener" style="margin-top:40px;display:inline-block">Начать тест за <span data-plan-price="test_1d">20</span>⭐</a>
     </div>
   </section>
 
@@ -144,7 +145,7 @@
   <footer>
     <div class="container">
       © <span id="y"></span> VPN_GPT · AI-помощник по подбору VPN.
-	   Клименко А.П. ИНН 614021157002
+           Клименко А.П. ИНН 614021157002
       <div class="footer-links">
         <a href="offer.html" target="_blank">Договор оферты</a> ·
         <a href="privacy.html" target="_blank">Политика обработки персональных данных</a> ·
@@ -153,7 +154,78 @@
         <a href="disclaimer.html">Дисклеймер</a>
       </div>
     </div>
-    <script>document.getElementById('y').textContent=new Date().getFullYear()</script>
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+      (function(){
+        const API_URL = '/api/site/pricing';
+        const PLAN_ALIASES = {
+          '1y': ['12m'],
+          '12m': ['1y'],
+        };
+
+        function setPrice(code, price){
+          document.querySelectorAll('[data-plan-price="' + code + '"]').forEach(function(node){
+            node.textContent = String(price);
+          });
+          const aliases = PLAN_ALIASES[code] || [];
+          aliases.forEach(function(alias){
+            document.querySelectorAll('[data-plan-price="' + alias + '"]').forEach(function(node){
+              node.textContent = String(price);
+            });
+          });
+        }
+
+        function toggleCards(available){
+          document.querySelectorAll('[data-plan-card]').forEach(function(card){
+            const code = card.getAttribute('data-plan-card');
+            const aliases = PLAN_ALIASES[code] || [];
+            const isVisible = available.has(code) || aliases.some(function(alias){
+              return available.has(alias);
+            });
+            if (isVisible){
+              card.classList.remove('is-hidden');
+            } else {
+              card.classList.add('is-hidden');
+            }
+          });
+        }
+
+        async function hydratePricing(){
+          try{
+            const response = await fetch(API_URL, {cache: 'no-cache'});
+            if (!response.ok){
+              throw new Error('Failed to fetch pricing: ' + response.status);
+            }
+            const payload = await response.json();
+            if (!payload || payload.ok === false){
+              throw new Error('Pricing payload is not available');
+            }
+
+            const availableCodes = new Set();
+            if (payload.test){
+              setPrice(payload.test.code, payload.test.price_stars);
+            }
+            if (Array.isArray(payload.plans)){
+              payload.plans.forEach(function(plan){
+                availableCodes.add(plan.code);
+                setPrice(plan.code, plan.price_stars);
+                const aliases = PLAN_ALIASES[plan.code] || [];
+                aliases.forEach(function(alias){
+                  availableCodes.add(alias);
+                });
+              });
+            }
+            if (availableCodes.size){
+              toggleCards(availableCodes);
+            }
+          } catch(error){
+            console.warn('Не удалось загрузить актуальные тарифы из API:', error);
+          }
+        }
+
+        hydratePricing();
+      })();
+    </script>
   </footer>
 </body>
 </html>

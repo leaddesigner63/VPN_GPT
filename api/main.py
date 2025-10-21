@@ -53,7 +53,17 @@ if origins:
     )
 
 # === Routers ===
-from api.endpoints import admin, morune, notify, payments, referrals, stars, users, vpn  # noqa: E402
+from api.endpoints import (  # noqa: E402
+    admin,
+    morune,
+    notify,
+    payments,
+    referrals,
+    site,
+    stars,
+    users,
+    vpn,
+)
 from api.utils import db  # noqa: E402
 from api.utils.expired_keys import ExpiredKeyMonitor  # noqa: E402
 from api.utils.notifications import RenewalNotificationScheduler  # noqa: E402
@@ -100,6 +110,7 @@ app.include_router(morune.legacy_router)
 app.include_router(referrals.router)
 app.include_router(notify.router, prefix="/notify", tags=["notify"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(site.router)
 app.include_router(stars.router)
 
 
