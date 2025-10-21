@@ -135,8 +135,8 @@ def load_star_settings() -> StarSettings:
     enabled = _parse_bool(os.getenv("STARS_ENABLED"), True)
     price_test = _parse_int("STARS_PRICE_TEST", 20)
     price_month = _parse_int("STARS_PRICE_MONTH", 80)
-    price_3m = _parse_int("STARS_PRICE_3M", 800)
-    price_year = _parse_int("STARS_PRICE_YEAR", 2400)
+    price_3m = _parse_int("STARS_PRICE_3M", 200)
+    price_year = _parse_int("STARS_PRICE_YEAR", 700)
     subscription_enabled = _parse_bool(os.getenv("STARS_SUBSCRIPTION_ENABLED"), False)
 
     plans: Dict[str, StarPlan] = {}
