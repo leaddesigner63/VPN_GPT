@@ -14,6 +14,7 @@ import httpx
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -728,7 +729,21 @@ async def edit_message_text_safe(
 ) -> bool:
     if message.text == text and _markups_equal(message.reply_markup, reply_markup):
         return False
-    updated = await message.edit_text(text, reply_markup=reply_markup)
+    try:
+        updated = await message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as exc:
+        description = str(exc)
+        if "message can't be edited" not in description.lower():
+            raise
+        logger.info(
+            "Falling back to sending new message because previous one cannot be edited",
+            extra={
+                "chat_id": message.chat.id,
+                "message_id": message.message_id,
+                "error": description,
+            },
+        )
+        updated = await message.answer(text, reply_markup=reply_markup)
     if isinstance(updated, Message):
         await _single_messages.remember(updated)
     else:  # pragma: no cover - defensive branch for unexpected return types
