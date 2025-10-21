@@ -64,12 +64,9 @@ def _format_days(days: int) -> str:
 
 
 def _build_trial_message(days: int) -> str:
-    if days > 0:
-        return _safe_text(
-            "Сейчас тестовый период — ключи выдаются бесплатно на "
-            f"{_format_days(days)}."
-        )
-    return _safe_text("Сейчас тестовый период — ключи выдаются бесплатно.")
+    return _safe_text(
+        "Тестовый доступ доступен на 24 часа за 20⭐ в Telegram. Нажми «Получить новый ключ», и я подскажу, как оплатить."
+    )
 
 
 TRIAL_DAYS = _get_trial_days()
@@ -372,33 +369,13 @@ async def renew(msg: Message):
 
 async def handle_issue_key(message: Message, username: str) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer(
-        _safe_text("⏳ Создаю для тебя VPN-ключ…"),
+    await message.answer(
+        _safe_text(
+            "Сейчас тестовый доступ выдаётся за 20⭐ в Telegram. Открой основной бот @dobriyvpn_bot, оплати тест и получи ключ "
+            "мгновенно. Если нужна помощь — просто напиши мне."
+        ),
         reply_markup=build_result_markup(),
     )
-    try:
-        payload = await request_key(username)
-    except Exception:
-        await progress.edit_text(
-            _safe_text("⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже."),
-            reply_markup=build_result_markup(),
-        )
-        return
-
-    if not payload.get("ok"):
-        await progress.edit_text(
-            _safe_text("⚠️ Не удалось получить ключ. Попробуй ещё раз чуть позже."),
-            reply_markup=build_result_markup(),
-        )
-        return
-
-    text, link = format_key_info(payload, username, "🎁 Твой VPN-ключ готов!")
-    await progress.edit_text(text, reply_markup=build_result_markup(link))
-
-    if link:
-        normalized_link = link.strip()
-        if normalized_link:
-            await _qr_links.remember(message.chat.id, normalized_link)
 
 
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:

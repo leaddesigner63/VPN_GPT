@@ -39,7 +39,7 @@ from handlers.stars import (
 )
 from utils.content_filters import assert_no_geoblocking, sanitize_text
 from utils.qrgen import make_qr
-from utils.stars import StarSettings, build_invoice_payload, load_star_settings, resolve_plan_duration
+from utils.stars import StarPlan, StarSettings, build_invoice_payload, load_star_settings, resolve_plan_duration
 
 load_dotenv()
 
@@ -133,8 +133,8 @@ MAX_HISTORY_MESSAGES = _get_int_env("GPT_HISTORY_MESSAGES", 6)
 VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8080")
 SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
 BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
-TRIAL_DAYS = _get_int_env("TRIAL_DAYS", 0)
 PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
+TEST_PLAN_CODE = os.getenv("STARS_TEST_PLAN_CODE", "test_1d")
 
 
 def _parse_admin_usernames(raw: str | None) -> set[str]:
@@ -227,6 +227,29 @@ PLAN_ORDER = [code for code in ("1m", "3m", "12m") if code in PLANS] + [
 STAR_SETTINGS: StarSettings = load_star_settings()
 STAR_PAY_PREFIX = "stars:buy:"
 STAR_SUBSCRIPTION_CODE = "sub_1m"
+
+
+def _get_star_plan(code: str) -> StarPlan | None:
+    if not code:
+        return None
+    return STAR_SETTINGS.plans.get(code)
+
+
+def _ordered_star_plans(settings: StarSettings) -> list[StarPlan]:
+    preferred = [code for code in (TEST_PLAN_CODE, "1m", "3m", "1y", "12m") if code]
+    seen: set[str] = set()
+    ordered: list[StarPlan] = []
+    for code in preferred:
+        plan = settings.plans.get(code)
+        if plan and plan.code not in seen:
+            ordered.append(plan)
+            seen.add(plan.code)
+    for plan in settings.available_plans():
+        if plan.is_subscription or plan.code in seen:
+            continue
+        ordered.append(plan)
+        seen.add(plan.code)
+    return ordered
 
 
 async def ensure_star_deliveries(message: Message, username: str) -> None:
@@ -382,7 +405,7 @@ def _build_common_action_rows(include_help: bool = True) -> list[list[InlineKeyb
         ]
     ]
 
-    payment_row = [InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)]
+    payment_row = [InlineKeyboardButton(text="⭐️ Оплатить", callback_data=MENU_PAY)]
     if include_help:
         payment_row.append(InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP))
     action_rows.append(payment_row)
@@ -397,7 +420,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🚀 Быстрый старт", callback_data=MENU_QUICK)],
             [InlineKeyboardButton(text="🧠 Подобрать с ИИ", callback_data=MENU_AI)],
             [InlineKeyboardButton(text="🔑 Мои ключи", callback_data=MENU_KEYS)],
-            [InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)],
+            [InlineKeyboardButton(text="⭐️ Оплатить", callback_data=MENU_PAY)],
             [InlineKeyboardButton(text="🤝 Рефералы", callback_data=MENU_REF)],
             [InlineKeyboardButton(text="ℹ️ Помощь", callback_data=MENU_HELP)],
         ]
@@ -417,7 +440,7 @@ def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) 
         return build_card_payment_keyboard(username, chat_id, ref)
 
     rows: list[list[InlineKeyboardButton]] = []
-    for plan in STAR_SETTINGS.available_plans():
+    for plan in _ordered_star_plans(STAR_SETTINGS):
         rows.append(
             [
                 InlineKeyboardButton(
@@ -438,7 +461,6 @@ def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) 
             ]
         )
 
-    rows.append([InlineKeyboardButton(text="💳 Оплатить картой", callback_data=PAY_CARD_MENU)])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -652,10 +674,11 @@ def _format_days(days: int) -> str:
     return f"{days} {suffix}"
 
 
-def _build_trial_phrase(days: int) -> str:
-    if days > 0:
-        return f"тест на {_format_days(days)}"
-    return "тест бесплатно"
+def _build_test_intro() -> str:
+    plan = _get_star_plan(TEST_PLAN_CODE)
+    if plan:
+        return f"тест за {plan.price_stars}⭐ на 24 часа"
+    return "тестовый доступ — я подскажу, как его активировать"
 
 
 def build_ai_questions_prompt() -> str:
@@ -875,34 +898,6 @@ async def apply_referral(referrer: str, referee: str, chat_id: int) -> None:
         logger.info("Referral not applied", extra={"status": exc.response.status_code})
 
 
-async def issue_trial_key(username: str, chat_id: int) -> dict[str, Any] | None:
-    try:
-        payload = await api_post(
-            "/vpn/issue_key",
-            {"username": username, "chat_id": chat_id, "trial": True},
-        )
-        if not payload.get("ok"):
-            return None
-        return payload
-    except VpnApiUnavailableError:
-        logger.error("VPN API is unavailable when issuing key")
-        return {"ok": False, "error": "service_unavailable"}
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 409:
-            return exc.response.json()
-        if exc.response.status_code == 503:
-            try:
-                error_body = exc.response.json()
-            except ValueError:  # pragma: no cover - defensive
-                error_body = {"detail": exc.response.text}
-            detail = error_body.get("error") or error_body.get("detail")
-            if detail == "service_token_not_configured":
-                logger.error("VPN API is unavailable: service token is not configured")
-                return {"ok": False, "error": "service_unavailable"}
-        logger.exception("Failed to issue key")
-        return None
-
-
 async def fetch_keys(username: str) -> list[dict[str, Any]]:
     try:
         response = await api_get(f"/users/{username}/keys")
@@ -1013,15 +1008,36 @@ def format_key_message(payload: dict[str, Any]) -> str:
 
 
 def build_ai_instruction_prompt(
-    device: str, region: str, preferences: str, trial_days: int, plans: Dict[str, int]
+    device: str, region: str, preferences: str, stars: StarSettings
 ) -> str:
-    plan_parts = [f"{code.upper()} — {price} ₽" for code, price in plans.items()]
+    test_plan = _get_star_plan(TEST_PLAN_CODE)
+    month_plan = stars.plans.get("1m")
+    extra_codes = [code for code in ("3m", "1y", "12m") if code in stars.plans]
+    extras = [stars.plans[code] for code in extra_codes if code in stars.plans]
+
+    test_phrase = (
+        f"Тест: {test_plan.price_stars}⭐ за 24 часа"
+        if test_plan
+        else "Тест активируется через Telegram Stars"
+    )
+    month_phrase = (
+        f"1 месяц — {month_plan.price_stars}⭐"
+        if month_plan
+        else "Месячный тариф доступен в боте"
+    )
+    extra_phrase = (
+        "; ".join(f"{plan.title} — {plan.price_stars}⭐" for plan in extras)
+        if extras
+        else ""
+    )
+    tariff_info = ", ".join(filter(None, [test_phrase, month_phrase, extra_phrase]))
+
     return (
         "Ты помогаешь пользователю настроить VPN. Сформируй лаконичную памятку из трёх пунктов: "
-        "1) выбери приложение под устройство, 2) опиши импорт VLESS-ссылки, 3) подскажи оплату тарифа. "
+        "1) выбери приложение под устройство, 2) опиши импорт VLESS-ссылки, 3) расскажи, как оплатить доступ звёздами. "
         "Пиши дружелюбно и понятно, избегай жаргона и длинных вступлений.\n"
         f"Устройство: {device}.\nРегион использования: {region}.\nОсобые пожелания: {preferences}.\n"
-        f"Триал: {trial_days} дней. Тарифы: {', '.join(plan_parts)}.\n"
+        f"Тарифы: {tariff_info}.\n"
         "Отвечай в формате списка с короткими предложениями."
     )
 
@@ -1034,7 +1050,7 @@ def build_ai_keyboard(link: str | None, username: str, chat_id: int, ref: str | 
             if _is_supported_button_link(normalized_link):
                 rows.append([InlineKeyboardButton(text="📥 Импортировать", url=normalized_link)])
             rows.append([InlineKeyboardButton(text="Показать QR", callback_data="show_qr")])
-    rows.append([InlineKeyboardButton(text="💳 Оплатить", callback_data=MENU_PAY)])
+    rows.append([InlineKeyboardButton(text="⭐️ Оплатить", callback_data=MENU_PAY)])
     rows.append([InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1070,12 +1086,12 @@ async def handle_start(message: Message, state: FSMContext) -> None:
     await ensure_star_deliveries(message, username)
     await bot.set_chat_menu_button(message.chat.id, MenuButtonDefault())
 
-    trial_phrase = _build_trial_phrase(TRIAL_DAYS)
+    test_intro = _build_test_intro()
     greeting = (
         "👋 Привет! Я VPN_GPT — помогу подключиться к VPN в три шага:\n"
-        f"1️⃣ Получи ключ ({trial_phrase}).\n"
-        "2️⃣ Следуй инструкции, подключи приложение.\n"
-        "3️⃣ Оплати подходящий тариф — и пользуйся без ограничений."
+        f"1️⃣ Активируй {test_intro}.\n"
+        "2️⃣ Следуй инструкции и подключи приложение.\n"
+        "3️⃣ Выбери тариф и пользуйся без ограничений."
     )
     await message.answer(greeting, reply_markup=build_main_menu())
 
@@ -1106,54 +1122,50 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     username = user.username or f"id_{user.id}"
     await register_user(username, message.chat.id, None)
     await ensure_star_deliveries(message, username)
-    payload = await issue_trial_key(username, message.chat.id)
-    if not payload:
+
+    test_plan = _get_star_plan(TEST_PLAN_CODE)
+    month_plan = _get_star_plan("1m")
+
+    if not STAR_SETTINGS.enabled or test_plan is None:
         await edit_message_text_safe(
             message,
-            "⚠️ Не удалось выдать ключ. Попробуй позже или свяжись с поддержкой.",
+            "Сейчас тестовый доступ выдаётся после оплаты звёздами. Напиши в чат, и я помогу оформить покупку вручную.",
             reply_markup=build_back_menu(),
         )
         await call.answer()
         return
 
-    if payload.get("error") == "service_unavailable":
-        await edit_message_text_safe(
-            message,
-            "😔 Сейчас не удаётся выдать ключи — сервис недоступен. "
-            "Мы уже работаем над решением. Попробуй позже или напиши в поддержку.",
-            reply_markup=build_back_menu(),
-        )
-        await call.answer()
-        return
-
-    if payload.get("error") == "trial_already_used":
-        await edit_message_text_safe(
-            message,
-            "У тебя уже есть активный тестовый ключ. Посмотри его в разделе «Мои ключи».",
-            reply_markup=build_back_menu(),
-        )
-        await call.answer()
-        return
-
-    link = payload.get("link")
-    text = (
-        "🎁 Готово! Твой тестовый доступ активирован."\
-        + "\n\n"
-        + format_key_message(payload)
-        + "\n\n"
-        + "ℹ️ Что делать дальше:\n"
-        + "1️⃣ Скопируй ссылку выше или открой QR-код.\n"
-        + "2️⃣ Вставь её в приложение (список ниже).\n"
-        + "3️⃣ Сохрани профиль и включи VPN.\n\n"
-        + "📱 <b>Рекомендуемые приложения:</b>\n"
-        + _format_vless_clients_recommendations()
+    lines = [
+        "🎯 <b>Тестовый доступ на 24 часа</b>",
+        f"Стоимость — {test_plan.price_stars}⭐. Оплата проходит прямо в Telegram, после неё ключ приходит мгновенно.",
+    ]
+    if month_plan:
+        lines.append(f"Месячный доступ сейчас стоит {month_plan.price_stars}⭐ — выбери его, когда убедишься, что всё работает.")
+    lines.extend(
+        [
+            "\nЧто делать после оплаты:",
+            "• Получи ссылку и QR прямо в этом чате.",
+            "• Импортируй конфигурацию в приложение.",
+            "• Включи VPN и наслаждайся свободным интернетом.",
+            "\n📱 <b>Рекомендуемые приложения:</b>",
+            _format_vless_clients_recommendations(),
+        ]
     )
-    await edit_message_text_safe(message, text, reply_markup=build_result_markup(link))
-    if link:
-        normalized_link = link.strip()
-        if normalized_link:
-            await _qr_links.remember(message.chat.id, normalized_link)
-    await call.answer("Ключ выдан")
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"⭐️ {test_plan.title} · {test_plan.price_stars}⭐",
+                    callback_data=f"{STAR_PAY_PREFIX}{test_plan.code}",
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)],
+        ]
+    )
+
+    await edit_message_text_safe(message, "\n".join(lines), reply_markup=keyboard)
+    await call.answer("Готово")
 
 
 @dp.callback_query(F.data == "show_qr")
@@ -1198,7 +1210,13 @@ async def handle_my_keys(call: CallbackQuery) -> None:
     keys = await fetch_keys(username)
     active_keys = [key for key in keys if key.get("active")]
     if not active_keys:
-        text = "Пока что активных ключей нет. Нажми «Быстрый старт», чтобы получить тестовый доступ!"
+        test_plan = _get_star_plan(TEST_PLAN_CODE)
+        if test_plan:
+            text = (
+                f"Пока активных ключей нет. Нажми «Быстрый старт», чтобы взять тест за {test_plan.price_stars}⭐ и проверить сервис!"
+            )
+        else:
+            text = "Пока активных ключей нет. Нажми «Быстрый старт», я помогу подключиться."
     else:
         parts = ["🔑 <b>Твои ключи</b>"]
         for idx, key in enumerate(active_keys, start=1):
@@ -1227,11 +1245,15 @@ async def handle_pay(call: CallbackQuery) -> None:
     username = user.username or f"id_{user.id}"
     await ensure_star_deliveries(message, username)
     if STAR_SETTINGS.enabled:
-        text = (
-            "Выбери способ оплаты. Stars работают прямо в Telegram, либо можно перейти на оплату картой."
-        )
+        test_plan = _get_star_plan(TEST_PLAN_CODE)
+        if test_plan:
+            text = (
+                f"Выбери тариф и оплати звёздами прямо в Telegram. Тест на 24 часа стоит {test_plan.price_stars}⭐."
+            )
+        else:
+            text = "Выбери тариф и оплати звёздами прямо в Telegram."
     else:
-        text = "Выбери тариф — мы создадим счёт и отправим ссылку на оплату."
+        text = "Оплата временно недоступна. Напиши в чат, и я помогу оформить доступ вручную."
     keyboard = build_payment_keyboard(username, message.chat.id, username)
     await edit_message_text_safe(message, text, reply_markup=keyboard)
     await call.answer()
@@ -1250,11 +1272,10 @@ async def handle_card_menu(call: CallbackQuery) -> None:
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     await ensure_star_deliveries(message, username)
-    keyboard = build_card_payment_keyboard(username, message.chat.id, user.username)
     await edit_message_text_safe(
         message,
-        "Выбери тариф для оплаты картой.",
-        reply_markup=keyboard,
+        "Оплата картой временно отключена. Используй оплату звёздами — она доступна в главном меню.",
+        reply_markup=build_back_menu(),
     )
     await call.answer()
 
@@ -1425,13 +1446,7 @@ async def process_ai_preferences(message: Message, state: FSMContext) -> None:
     username = user.username or f"id_{user.id}"
     await register_user(username, message.chat.id, None)
 
-    trial_payload = await issue_trial_key(username, message.chat.id)
-    if trial_payload and trial_payload.get("error") == "trial_already_used":
-        trial_payload = None
-
-    link = trial_payload.get("link") if trial_payload else None
-
-    prompt = build_ai_instruction_prompt(device, region, preferences, TRIAL_DAYS, PLANS)
+    prompt = build_ai_instruction_prompt(device, region, preferences, STAR_SETTINGS)
     ai_message = await ask_gpt(
         message.chat.id,
         prompt,
@@ -1439,21 +1454,25 @@ async def process_ai_preferences(message: Message, state: FSMContext) -> None:
     )
 
     response_parts = ["🧠 <b>Твой персональный план</b>", ai_message.strip()]
-    if trial_payload:
-        response_parts.append("\n🎁 Тестовый доступ уже активирован:")
-        response_parts.append(format_key_message(trial_payload))
+    test_plan = _get_star_plan(TEST_PLAN_CODE)
+    month_plan = _get_star_plan("1m")
+    if test_plan:
+        info = [
+            "\n⭐️ <b>Как протестировать сервис</b>",
+            f"Оформи тест на 24 часа за {test_plan.price_stars}⭐ — кнопка ниже откроет оплату прямо в Telegram.",
+        ]
+        if month_plan:
+            info.append(
+                f"Когда понравится, переходи на месяц за {month_plan.price_stars}⭐ или выбирай другие тарифы."
+            )
+        response_parts.extend(info)
     else:
         response_parts.append(
-            "\nУ тебя уже есть активный ключ. Посмотри его в разделе «Мои ключи»."
+            "\n⭐️ Тестовый доступ оформляется через раздел оплаты. Нажми «Оплатить», и я всё подскажу."
         )
 
-    keyboard = build_ai_keyboard(link, username, message.chat.id, user.username)
+    keyboard = build_ai_keyboard(None, username, message.chat.id, user.username)
     await message.answer("\n".join(response_parts), reply_markup=keyboard)
-
-    if link:
-        normalized_link = link.strip()
-        if normalized_link:
-            await _qr_links.remember(message.chat.id, normalized_link)
 
 
 @dp.message(Command("help"))

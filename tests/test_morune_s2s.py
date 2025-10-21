@@ -50,12 +50,24 @@ def morune_app(tmp_path, monkeypatch) -> MoruneTestEnv:
     monkeypatch.setenv("ADMIN_PANEL_PASSWORD", "panelpass")
 
     import api.config as config_module
+    importlib.reload(config_module)
+
+    config_module.MORUNE_API_KEY = "test-api"
+    config_module.MORUNE_SHOP_ID = "shop-123"
+    config_module.MORUNE_WEBHOOK_SECRET = "hook-secret"
+
     import api.utils.db as db_module
     import api.utils.morune_client as morune_client_module
+    import api.endpoints.morune as morune_endpoint_module
     import api.main as api_main
 
-    for module in (config_module, db_module, morune_client_module, api_main):
+    for module in (db_module, morune_client_module, morune_endpoint_module, api_main):
         importlib.reload(module)
+
+    monkeypatch.setattr(morune_endpoint_module, "MORUNE_API_KEY", "test-api", raising=False)
+    monkeypatch.setattr(morune_endpoint_module, "MORUNE_SHOP_ID", "shop-123", raising=False)
+    monkeypatch.setattr(morune_client_module, "MORUNE_API_KEY", "test-api", raising=False)
+    monkeypatch.setattr(morune_client_module, "MORUNE_SHOP_ID", "shop-123", raising=False)
 
     db_module.init_db()
 

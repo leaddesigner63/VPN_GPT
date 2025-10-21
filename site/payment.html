@@ -93,29 +93,20 @@
       <h1>Оплата подписки</h1>
       <p>Выберите срок подписки — мы создадим счёт и перенаправим на защищённую страницу оплаты.</p>
       <div class="payment-form">
-        <form id="payment-form">
-          <label for="username">Ваш Telegram</label>
-          <input id="username" name="username" type="text" inputmode="text" autocomplete="username" placeholder="@username" required />
-          <label for="plan">Тариф</label>
-          <select id="plan" name="plan">
-            <option value="1m">1 месяц</option>
-            <option value="3m">3 месяца</option>
-            <option value="1y">12 месяцев</option>
-          </select>
-          <button type="submit" class="btn" id="submit-btn">Оплатить</button>
-          <div id="status" class="status" aria-live="polite"></div>
-        </form>
-        <div class="stars-block" id="stars-section" hidden aria-live="polite">
+        <div class="status" style="margin-bottom:12px">
+          Оплата картой временно недоступна. Используйте Telegram Stars — это безопасно и происходит прямо внутри мессенджера.
+        </div>
+        <div class="stars-block" id="stars-section" aria-live="polite">
           <div class="stars-heading">
             <div class="stars-icon" aria-hidden="true">⭐️</div>
             <div>
               <p class="stars-title">Оплатить звёздами в Telegram</p>
-              <p class="stars-description">Откроется окно Telegram. После оплаты бот мгновенно выдаст или продлит доступ.</p>
+              <p class="stars-description">После оплаты бот мгновенно выдаст или продлит доступ. Тест на 24 часа стоит 20⭐.</p>
             </div>
           </div>
           <div class="stars-buttons" id="stars-buttons"></div>
           <div class="stars-subscription" id="stars-subscription"></div>
-          <p class="stars-note">Оплата проходит внутри Telegram. Если у вас нет звёзд, Telegram предложит купить их перед оплатой.</p>
+          <p class="stars-note">Если у вас ещё нет звёзд, Telegram предложит купить их перед оплатой — это займёт пару минут.</p>
           <div class="stars-status" id="stars-status"></div>
         </div>
       </div>
@@ -134,98 +125,9 @@
   <script>
     document.getElementById('py').textContent = new Date().getFullYear();
 
-    const form = document.getElementById('payment-form');
-    const planSelect = document.getElementById('plan');
-    const usernameInput = document.getElementById('username');
-    const submitBtn = document.getElementById('submit-btn');
-    const statusBox = document.getElementById('status');
-    const starsSection = document.getElementById('stars-section');
     const starsButtons = document.getElementById('stars-buttons');
     const starsSubscription = document.getElementById('stars-subscription');
     const starsStatus = document.getElementById('stars-status');
-
-    const params = new URLSearchParams(window.location.search);
-    const presetPlan = params.get('plan');
-    if (presetPlan && ['1m','3m','1y'].includes(presetPlan)) {
-      planSelect.value = presetPlan;
-    }
-    const autoStart = ['1','true','yes'].includes((params.get('auto') || params.get('autostart') || '').toLowerCase());
-
-    const resolveUsername = () => {
-      const param = params.get('username') || params.get('u');
-      if (!param) return undefined;
-      const trimmed = param.trim();
-      if (!trimmed) return undefined;
-      return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
-    };
-
-    const normaliseUsername = (value) => {
-      if (!value) return undefined;
-      const trimmed = value.trim();
-      if (!trimmed) return undefined;
-      const withoutAt = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
-      return withoutAt.trim() || undefined;
-    };
-
-    const presetUsername = resolveUsername();
-    if (presetUsername) {
-      usernameInput.value = `@${presetUsername}`;
-    }
-
-    usernameInput.addEventListener('input', () => {
-      if (statusBox.classList.contains('error')) {
-        setStatus('');
-      }
-    });
-
-    const resolveChatId = () => {
-      const raw = params.get('c') || params.get('chat_id');
-      if (!raw) return undefined;
-      const trimmed = raw.trim();
-      return trimmed ? trimmed : undefined;
-    };
-
-    const resolveReferrer = () => {
-      const raw = params.get('r') || params.get('ref') || params.get('referrer');
-      if (!raw) return undefined;
-      const trimmed = raw.trim();
-      if (!trimmed) return undefined;
-      const normalized = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
-      return normalized || undefined;
-    };
-
-    const resolveUserId = () => {
-      const raw = params.get('uid') || params.get('user_id');
-      if (!raw) return undefined;
-      const trimmed = raw.trim();
-      return trimmed ? trimmed : undefined;
-    };
-
-    const resolveBotUsername = () => {
-      const raw = params.get('bot') || params.get('bot_username');
-      if (!raw) return undefined;
-      const trimmed = raw.trim();
-      if (!trimmed) return undefined;
-      return trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
-    };
-
-    const setStatus = (text, type) => {
-      statusBox.textContent = text || '';
-      statusBox.classList.remove('error', 'success');
-      if (type) statusBox.classList.add(type);
-    };
-
-    const toggleLoading = (isLoading) => {
-      submitBtn.disabled = isLoading;
-      submitBtn.textContent = isLoading ? 'Создаём счёт…' : 'Оплатить';
-    };
-
-    const setStarsStatus = (text, type) => {
-      if (!starsStatus) return;
-      starsStatus.textContent = text || '';
-      starsStatus.classList.remove('error', 'success');
-      if (type) starsStatus.classList.add(type);
-    };
 
     const formatStars = (value) => {
       const number = Number(value);
@@ -247,14 +149,20 @@
       return link;
     };
 
+    const setStarsStatus = (text, type) => {
+      if (!starsStatus) return;
+      starsStatus.textContent = text || '';
+      starsStatus.classList.remove('error', 'success');
+      if (type) starsStatus.classList.add(type);
+    };
+
     const loadStarInvoices = async () => {
-      if (!starsSection || !starsButtons) {
+      if (!starsButtons) {
         return;
       }
 
       try {
-        setStarsStatus('Загружаем оплату звёздами…');
-        starsSection.hidden = false;
+        setStarsStatus('Загружаем доступные тарифы…');
         const response = await fetch('/api/stars/invoices', {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
@@ -264,7 +172,7 @@
         }
         const data = await response.json();
         if (!data?.enabled) {
-          starsSection.hidden = true;
+          setStarsStatus('Оплата звёздами временно недоступна. Напишите нам в Telegram — поможем вручную.', 'error');
           return;
         }
 
@@ -274,7 +182,7 @@
           starsSubscription.style.display = 'none';
         }
 
-        const order = ['1m', '3m', '1y'];
+        const order = ['test_1d', '1m', '3m', '1y'];
         const plans = data.plans || {};
         let added = 0;
         order.forEach((code) => {
@@ -305,85 +213,13 @@
         if (added === 0 && !data.subscription) {
           setStarsStatus('Пока нет доступных тарифов для оплаты звёздами.', 'error');
         } else {
-          setStarsStatus('Оплата звёздами доступна — выберите подходящий тариф.', 'success');
+          setStarsStatus('Выберите тариф — оплата звёздами проходит прямо в Telegram.', 'success');
         }
       } catch (error) {
         console.error(error);
-        setStarsStatus('Не удалось загрузить оплату звёздами. Попробуйте позже или используйте оплату картой.', 'error');
+        setStarsStatus('Не удалось загрузить оплату звёздами. Попробуйте позже или напишите нам в Telegram.', 'error');
       }
     };
-
-    async function createInvoice(autoRedirect) {
-      const plan = planSelect.value;
-      const username = normaliseUsername(usernameInput.value) || resolveUsername();
-      if (!username) {
-        setStatus('Укажите ваш Telegram-логин — его можно найти в профиле Telegram.', 'error');
-        usernameInput.focus();
-        return;
-      }
-
-      const payload = { plan, username };
-      const chatId = resolveChatId();
-      if (chatId) payload.chat_id = chatId;
-
-      const referrer = resolveReferrer();
-      if (referrer && referrer !== username) payload.referrer = referrer;
-
-      const userId = resolveUserId();
-      const botUsername = resolveBotUsername();
-      const metadata = {};
-      if (autoRedirect || chatId || referrer || userId || botUsername) {
-        metadata.channel = 'telegram';
-      }
-      if (userId) metadata.telegram_user_id = userId;
-      if (botUsername) metadata.bot_username = botUsername;
-      if (Object.keys(metadata).length > 0) {
-        payload.metadata = metadata;
-      }
-
-      toggleLoading(true);
-      setStatus('Создаём счёт…');
-
-      try {
-        const response = await fetch('/api/payments/public/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          const detail = body.detail || response.statusText;
-          throw new Error(detail || `Ошибка ${response.status}`);
-        }
-        const data = await response.json();
-        const paymentUrl = data.payment_url;
-        const paymentId = data.payment_id;
-        if (!paymentUrl) {
-          throw new Error('Ссылка оплаты не получена. Попробуйте позже.');
-        }
-        const successText = paymentId ? `Счёт ${paymentId} создан. Перенаправляем на оплату…` : 'Перенаправляем на оплату…';
-        setStatus(successText, 'success');
-        if (autoRedirect) {
-          window.location.href = paymentUrl;
-        } else {
-          window.location.assign(paymentUrl);
-        }
-      } catch (error) {
-        console.error(error);
-        setStatus(`Не удалось создать счёт: ${error.message || error}`, 'error');
-      } finally {
-        toggleLoading(false);
-      }
-    }
-
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      createInvoice(false);
-    });
-
-    if (autoStart) {
-      createInvoice(true);
-    }
 
     loadStarInvoices();
   </script>

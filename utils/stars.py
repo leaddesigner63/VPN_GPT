@@ -51,6 +51,7 @@ def _parse_int(name: str, default: int) -> int:
 
 
 _PLAN_TITLES = {
+    "test_1d": "Тест на 24 часа",
     "1m": "1 месяц",
     "3m": "3 месяца",
     "1y": "12 месяцев",
@@ -59,6 +60,7 @@ _PLAN_TITLES = {
 }
 
 _PLAN_LABELS = {
+    "test_1d": "Тест 24 часа",
     "1m": "1 месяц",
     "3m": "3 месяца",
     "1y": "12 месяцев",
@@ -67,6 +69,7 @@ _PLAN_LABELS = {
 }
 
 _PLAN_DURATIONS = {
+    "test_1d": 1,
     "1m": 30,
     "3m": 90,
     "1y": 365,
@@ -130,12 +133,16 @@ def _build_plan(code: str, price: int, *, subscription: bool = False) -> StarPla
 
 def load_star_settings() -> StarSettings:
     enabled = _parse_bool(os.getenv("STARS_ENABLED"), True)
-    price_month = _parse_int("STARS_PRICE_MONTH", 300)
+    price_test = _parse_int("STARS_PRICE_TEST", 20)
+    price_month = _parse_int("STARS_PRICE_MONTH", 80)
     price_3m = _parse_int("STARS_PRICE_3M", 800)
     price_year = _parse_int("STARS_PRICE_YEAR", 2400)
     subscription_enabled = _parse_bool(os.getenv("STARS_SUBSCRIPTION_ENABLED"), False)
 
     plans: Dict[str, StarPlan] = {}
+    test_plan = _build_plan("test_1d", price_test)
+    if test_plan:
+        plans[test_plan.code] = test_plan
     month_plan = _build_plan("1m", price_month)
     if month_plan:
         plans[month_plan.code] = month_plan

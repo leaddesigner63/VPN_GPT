@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import pytest
 from fastapi import FastAPI
@@ -32,7 +30,7 @@ def configured_env(tmp_path, monkeypatch) -> EnvConfig:
                 "VLESS_HOST=test.example",
                 "VLESS_PORT=2053",
                 "BOT_PAYMENT_URL=https://vpn-gpt.store/pay",
-                "TRIAL_DAYS=3",
+                "TRIAL_DAYS=0",
                 "PLANS=1m:180,3m:450",
                 "ADMIN_TOKEN=secret",
                 "INTERNAL_TOKEN=service",
@@ -117,63 +115,40 @@ def _fetch_referral(database: Path, referrer: str, referee: str) -> sqlite3.Row 
         con.close()
 
 
-def test_issue_trial_key(api_app, configured_env):
+def test_issue_key_requires_payment_when_no_active_key(api_app, configured_env):
     response = api_app.post(
         "/vpn/issue_key",
         json={"username": "alice", "chat_id": 12345},
         headers=auth_headers(),
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 409
     body = response.json()
-    assert body["ok"] is True
-    assert body["trial"] is True
-    assert body["reused"] is False
+    assert body["ok"] is False
+    assert body["error"] == "trial_unavailable"
 
     keys = _fetch_keys(configured_env.database, "alice")
-    assert len(keys) == 1
-    assert keys[0]["trial"] == 1
-
-    config_path = Path(os.environ["XRAY_CONFIG"])
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    clients = config["inbounds"][0]["settings"]["clients"]
-    assert any(
-        client.get("id") == body["uuid"] and client.get("email") == "VPN_GPT_alice"
-        for client in clients
-    )
+    assert keys == []
 
 
-def test_issue_trial_second_time_returns_existing(api_app):
-    first = api_app.post(
-        "/vpn/issue_key",
-        json={"username": "bob", "chat_id": 1},
+def test_issue_key_returns_existing_active_key(api_app, configured_env):
+    initial = api_app.post(
+        "/vpn/renew_key",
+        json={"username": "bob", "plan": "1m", "chat_id": 1},
         headers=auth_headers(),
     )
+    assert initial.status_code == 200
+
     second = api_app.post(
         "/vpn/issue_key",
         json={"username": "bob", "chat_id": 1},
         headers=auth_headers(),
     )
 
-    assert first.status_code == 200
     assert second.status_code == 200
-    assert second.json()["reused"] is True
-
-
-def test_trial_unavailable_after_consumption(api_app):
-    api_app.post(
-        "/vpn/issue_key",
-        json={"username": "carol"},
-        headers=auth_headers(),
-    )
-    response = api_app.post(
-        "/vpn/issue_key",
-        json={"username": "carol", "trial": True},
-        headers=auth_headers(),
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["reused"] is True
+    payload = second.json()
+    assert payload["reused"] is True
+    assert payload["trial"] is False
 
 
 def test_renew_creates_new_key(api_app, configured_env):
@@ -535,20 +510,24 @@ def test_issue_key_auto_migrates_missing_trial_column(tmp_path, monkeypatch):
     app.include_router(api_main.vpn.router)
     app.include_router(api_main.users.router)
 
-    client = TestClient(app)
-    try:
+    with TestClient(app) as client:
         response = client.post(
             "/vpn/issue_key",
             json={"username": "legacy_user", "chat_id": 99},
             headers=auth_headers(),
         )
-    finally:
-        client.close()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["trial"] is True
+        assert response.status_code == 409
+        body = response.json()
+        assert body["ok"] is False
+        assert body["error"] == "trial_unavailable"
+
+        renew = client.post(
+            "/vpn/renew_key",
+            json={"username": "legacy_user", "plan": "1m"},
+            headers=auth_headers(),
+        )
+        assert renew.status_code == 200
 
     with sqlite3.connect(db_path) as con:
         cur = con.execute("PRAGMA table_info(vpn_keys)")
