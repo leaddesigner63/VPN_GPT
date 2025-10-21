@@ -15,7 +15,13 @@ from aiogram.types import (
     PreCheckoutQuery,
 )
 
-from utils.stars import StarPlan, StarSettings, build_invoice_payload
+from api.utils.telegram import TelegramInvoiceError, create_invoice_link
+from utils.stars import (
+    StarPlan,
+    StarSettings,
+    build_invoice_payload,
+    build_invoice_request_data,
+)
 
 STAR_CALLBACK_PREFIX = "stars:buy:"
 
@@ -81,6 +87,15 @@ async def _handle_duplicate_payment(message: Message, username: str) -> None:
 def _build_invoice_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_back")]]
+    )
+
+
+def _build_invoice_link_markup(link: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐️ Оформить подписку", url=link)],
+            [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_back")],
+        ]
     )
 
 
@@ -152,11 +167,35 @@ async def handle_star_purchase(callback: CallbackQuery) -> None:
     await deps.delete_previous_qr(chat_id)
     await deps.register_user(username, chat_id, user.username)
 
-    try:
-        description = f"Доступ к VPN_GPT на {plan.title.lower()}"
-        if plan.is_subscription:
-            description = f"Подписка VPN_GPT на {plan.title.lower()} с автопродлением"
+    description = f"Доступ к VPN_GPT на {plan.title.lower()}"
+    if plan.is_subscription:
+        description = f"Подписка VPN_GPT на {plan.title.lower()} с автопродлением"
 
+    if plan.is_subscription:
+        invoice_payload = build_invoice_request_data(plan)
+        try:
+            link = await create_invoice_link(invoice_payload)
+        except TelegramInvoiceError as exc:
+            deps.logger.exception(
+                "Failed to request Telegram Stars invoice link",
+                extra={"plan": plan.code, "error": exc.detail},
+            )
+            await callback.answer("Не удалось создать счёт. Попробуй ещё раз позже.", show_alert=True)
+            return
+
+        message_text = (
+            "⭐️ Открой ссылку ниже, чтобы оформить подписку. "
+            "После оплаты мы мгновенно выдадим доступ."
+        )
+        await message.answer(message_text, reply_markup=_build_invoice_link_markup(link))
+        deps.logger.info(
+            "Sent Stars invoice link",
+            extra={"plan": plan.code, "chat_id": chat_id},
+        )
+        await callback.answer()
+        return
+
+    try:
         invoice_message = await message.answer_invoice(
             title=f"VPN_GPT · {plan.title}",
             description=description,

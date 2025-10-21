@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional
 
 __all__ = [
     "StarPlan",
@@ -10,6 +10,7 @@ __all__ = [
     "load_star_settings",
     "resolve_plan_duration",
     "build_invoice_payload",
+    "build_invoice_request_data",
 ]
 
 _ALLOWED_BOOL_TRUE = {"1", "true", "yes", "y", "on", "enable", "enabled"}
@@ -185,3 +186,25 @@ def load_star_settings() -> StarSettings:
 
 def build_invoice_payload(plan_code: str) -> str:
     return f"stars:buy:{plan_code}"
+
+
+def build_invoice_request_data(plan: StarPlan, *, include_subscription_period: bool = True) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "title": f"VPN_GPT · {plan.title}",
+        "description": (
+            f"Подписка VPN_GPT на {plan.title.lower()} с автопродлением"
+            if plan.is_subscription
+            else f"Доступ к VPN_GPT на {plan.title.lower()}"
+        ),
+        "currency": "XTR",
+        "payload": build_invoice_payload(plan.code),
+        "prices": [
+            {
+                "label": plan.label,
+                "amount": plan.price_stars,
+            }
+        ],
+    }
+    if include_subscription_period and plan.subscription_period:
+        payload["subscription_period"] = plan.subscription_period
+    return payload
