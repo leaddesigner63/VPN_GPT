@@ -277,6 +277,23 @@ def _ordered_star_plans(settings: StarSettings) -> list[StarPlan]:
     return ordered
 
 
+def _format_active_key_quick_start_message(active_keys: Sequence[dict[str, Any]]) -> str:
+    if not active_keys:
+        raise ValueError("active_keys must not be empty")
+
+    key = active_keys[0]
+    expires_at = key.get("expires_at") or "—"
+
+    lines = [
+        "🔐 <b>Доступ уже активен</b>",
+        f"Текущий ключ действует до: {expires_at}",
+        "",
+        "Продли подписку по действующим тарифам — выбери подходящий вариант ниже.",
+        "Если понадобится ключ ещё раз, открой раздел «🔑 Мои ключи».",
+    ]
+    return "\n".join(lines)
+
+
 async def ensure_star_deliveries(message: Message, username: str) -> None:
     if not STAR_SETTINGS.enabled:
         return
@@ -1137,6 +1154,15 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     username = user.username or f"id_{user.id}"
     await register_user(username, message.chat.id, None)
     await ensure_star_deliveries(message, username)
+
+    keys = await fetch_keys(username)
+    active_keys = [key for key in keys if key.get("active")]
+    if active_keys:
+        text = _format_active_key_quick_start_message(active_keys)
+        reply_markup = build_payment_keyboard(username, message.chat.id, username)
+        await edit_message_text_safe(message, text, reply_markup=reply_markup)
+        await call.answer("Доступ уже активен")
+        return
 
     test_plan = _get_star_plan(TEST_PLAN_CODE)
 
