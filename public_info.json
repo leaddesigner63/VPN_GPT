@@ -1,0 +1,48 @@
+{
+  "name": "VPN_GPT",
+  "tagline": "AI-помощник, который выдаёт и сопровождает VPN-доступ",
+  "description": "VPN_GPT — сервис, где нейросеть выдаёт VLESS-доступ и помогает подключиться без лишних шагов.",
+  "website": "https://vpn-gpt.store",
+  "telegram_bot": "https://t.me/dobriyvpn_bot",
+  "creator": "Александр Клименко (@ai_leaddesigner)",
+  "contacts": [
+    {
+      "label": "Поддержка в Telegram",
+      "value": "@dobriyvpn_bot",
+      "url": "https://t.me/dobriyvpn_bot"
+    },
+    {
+      "label": "Создатель проекта",
+      "value": "@ai_leaddesigner",
+      "url": "https://t.me/ai_leaddesigner"
+    }
+  ],
+  "highlights": [
+    "Подбор и выдача VPN-ключа выполняются через кастомного GPT-ассистента.",
+    "Xray-сервер с протоколом VLESS выдаёт ссылку и QR-код сразу после запроса.",
+    "Telegram Stars используются для оформления тестового доступа и подписок.",
+    "GitHub Actions деплоит обновления на сервер автоматически."
+  ],
+  "pricing": [
+    {
+      "plan": "Тест на 24 часа",
+      "price": "20⭐",
+      "note": "оформляется через Telegram Stars"
+    },
+    {
+      "plan": "1 месяц",
+      "price": "80⭐",
+      "note": "подписка с автопродлением"
+    },
+    {
+      "plan": "3 месяца",
+      "price": "200⭐",
+      "note": "экономия по сравнению с помесячной оплатой"
+    },
+    {
+      "plan": "12 месяцев",
+      "price": "700⭐",
+      "note": "годовая подписка с приоритетной поддержкой"
+    }
+  ]
+}

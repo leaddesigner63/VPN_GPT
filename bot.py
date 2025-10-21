@@ -39,6 +39,10 @@ from handlers.stars import (
     setup_stars_handlers,
 )
 from utils.content_filters import assert_no_geoblocking, sanitize_text
+from utils.public_info import (
+    build_vless_client_guard_prompt,
+    get_public_info_prompt,
+)
 from utils.qrgen import make_qr
 from utils.stars import (
     STAR_PAYLOAD_PREFIX,
@@ -208,6 +212,11 @@ _VLESS_CLIENTS_SYSTEM_PROMPT = (
     "Для каждой операционной системы используй не более одного приложения, не добавляй описания и комментарии. "
     "Применяй формат «• ОС — <a href=\"URL\">Название</a>» без отображения голых ссылок.\n"
     f"{_VLESS_CLIENTS_RECOMMENDATIONS}"
+)
+
+_PUBLIC_INFO_PROMPT = get_public_info_prompt()
+_VLESS_CLIENTS_GUARD_PROMPT = build_vless_client_guard_prompt(
+    _VLESS_CLIENTS_RECOMMENDATIONS
 )
 
 
@@ -780,6 +789,10 @@ def _build_messages(
     history = list(_get_history(chat_id))
     messages: list[dict[str, str]] = []
     system_prompts = list(SYSTEM_PROMPTS)
+    for prompt in (_PUBLIC_INFO_PROMPT, _VLESS_CLIENTS_GUARD_PROMPT):
+        cleaned = prompt.strip() if prompt else ""
+        if cleaned:
+            system_prompts.append(cleaned)
     if extra_system_prompts:
         for prompt in extra_system_prompts:
             cleaned = prompt.strip()
