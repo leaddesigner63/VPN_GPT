@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from aiogram import F, Dispatcher, Router
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LabeledPrice,
+    Message,
+    PreCheckoutQuery,
+)
 
 from utils.stars import StarPlan, StarSettings, build_invoice_payload
 
@@ -69,6 +76,12 @@ async def _handle_duplicate_payment(message: Message, username: str) -> None:
     text = "⭐️ Этот платёж уже обработан. Открой раздел «Мои ключи», чтобы увидеть актуальный доступ."
     markup = deps.build_result_markup(None)
     await message.answer(text, reply_markup=markup)
+
+
+def _build_invoice_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_back")]]
+    )
 
 
 async def _deliver_payment(
@@ -150,6 +163,7 @@ async def handle_star_purchase(callback: CallbackQuery) -> None:
             currency="XTR",
             prices=[LabeledPrice(label=plan.label, amount=plan.price_stars)],
             payload=build_invoice_payload(plan.code),
+            reply_markup=_build_invoice_markup(),
         )
     except Exception as exc:  # pragma: no cover - defensive
         deps.logger.exception(
