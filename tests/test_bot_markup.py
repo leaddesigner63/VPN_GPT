@@ -22,6 +22,8 @@ _BOT_SPEC.loader.exec_module(bot_module)
 _is_supported_button_link = bot_module._is_supported_button_link
 build_result_markup = bot_module.build_result_markup
 _format_active_key_quick_start_message = bot_module._format_active_key_quick_start_message
+_should_offer_tariffs = bot_module._should_offer_tariffs
+_format_active_subscription_notice = bot_module._format_active_subscription_notice
 
 
 def test_is_supported_button_link_accepts_http_and_https():
@@ -111,3 +113,30 @@ def test_format_active_key_quick_start_message_handles_missing_expiry():
 def test_format_active_key_quick_start_message_requires_active_keys():
     with pytest.raises(ValueError):
         _format_active_key_quick_start_message([])
+
+
+def test_should_offer_tariffs_permits_trial_access():
+    keys = [
+        {"active": 1, "trial": True},
+        {"active": 0, "trial": False},
+    ]
+
+    assert _should_offer_tariffs(keys)
+
+
+def test_should_offer_tariffs_blocks_active_subscription():
+    keys = [
+        {"active": 1, "trial": False},
+        {"active": 1, "trial": True},
+    ]
+
+    assert not _should_offer_tariffs(keys)
+
+
+def test_format_active_subscription_notice_mentions_expiry():
+    message = _format_active_subscription_notice(
+        {"expires_at": "2024-10-01T00:00:00", "label": "1 месяц"}
+    )
+
+    assert "Подписка уже активна" in message
+    assert "2024-10-01T00:00:00" in message

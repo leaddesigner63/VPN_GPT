@@ -496,6 +496,37 @@ def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _build_main_menu_only_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data=MENU_BACK)]]
+    )
+
+
+def _find_active_subscription_key(keys: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+    for key in keys:
+        if not key.get("active"):
+            continue
+        if key.get("trial"):
+            continue
+        return key
+    return None
+
+
+def _should_offer_tariffs(keys: Sequence[dict[str, Any]]) -> bool:
+    return _find_active_subscription_key(keys) is None
+
+
+def _format_active_subscription_notice(subscription_key: dict[str, Any]) -> str:
+    expires_at = subscription_key.get("expires_at") or "—"
+    label = subscription_key.get("label")
+    lines = ["🔔 Подписка уже активна."]
+    if label:
+        lines.append(f"Тариф: {label}")
+    lines.append(f"Доступ действует до: {expires_at}.")
+    lines.append("Управлять подпиской можно через «🔑 Мои ключи» или настройки Telegram.")
+    return _safe_text("\n".join(lines))
+
+
 def build_card_payment_keyboard(
     username: str, chat_id: int | None, ref: str | None
 ) -> InlineKeyboardMarkup:
@@ -1264,7 +1295,10 @@ async def handle_my_keys(call: CallbackQuery) -> None:
             if key.get("link"):
                 parts.append(f"<code>{key['link']}</code>")
         text = "\n".join(parts)
-    reply_markup = build_payment_keyboard(username, message.chat.id, username)
+    if _should_offer_tariffs(active_keys):
+        reply_markup = build_payment_keyboard(username, message.chat.id, username)
+    else:
+        reply_markup = _build_main_menu_only_keyboard()
     await edit_message_text_safe(message, text, reply_markup=reply_markup)
     await call.answer()
 
@@ -1282,6 +1316,19 @@ async def handle_pay(call: CallbackQuery) -> None:
     await _delete_previous_qr(message.chat.id)
     username = user.username or f"id_{user.id}"
     await ensure_star_deliveries(message, username)
+    keys = await fetch_keys(username)
+    active_keys = [key for key in keys if key.get("active")]
+    subscription_key = _find_active_subscription_key(active_keys)
+    if subscription_key:
+        notice = _format_active_subscription_notice(subscription_key)
+        await edit_message_text_safe(
+            message,
+            notice,
+            reply_markup=_build_main_menu_only_keyboard(),
+        )
+        await call.answer()
+        return
+
     if STAR_SETTINGS.enabled:
         test_plan = _get_star_plan(TEST_PLAN_CODE)
         if test_plan:
