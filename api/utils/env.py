@@ -56,7 +56,7 @@ def _normalise_host(value: str | None) -> str | None:
     if not candidate:
         return None
 
-    # Drop URL schemes if somebody provided `https://example.com`.
+    # Drop URL schemes if somebody provided `https://vpn-gpt.store`.
     if "://" in candidate:
         candidate = candidate.split("://", 1)[1]
 

@@ -54,7 +54,7 @@ def test_send_message_applies_sanitizer(monkeypatch):
             return DummyResponse()
 
     monkeypatch.setattr(telegram, "BOT_TOKEN", "token")
-    monkeypatch.setattr(telegram, "BASE", "https://example.com")
+    monkeypatch.setattr(telegram, "BASE", "https://vpn-gpt.store")
     monkeypatch.setattr(telegram.httpx, "AsyncClient", lambda timeout=30: DummyClient())
 
     asyncio.run(telegram.send_message(123, "гео блокировка снята"))
