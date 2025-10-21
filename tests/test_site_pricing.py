@@ -60,3 +60,9 @@ def test_site_pricing_reflects_environment(monkeypatch, tmp_path):
     assert prices["1m"] == 80
     assert prices["3m"] == 200
     assert prices["1y"] == 700
+
+    star_settings = config_module.STAR_SETTINGS
+    assert star_settings.plans["1m"].is_subscription is True
+    assert star_settings.plans["3m"].is_subscription is True
+    assert star_settings.plans["1y"].is_subscription is True
+    assert star_settings.plans["test_1d"].is_subscription is False

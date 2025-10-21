@@ -29,6 +29,7 @@ class StarInvoice(BaseModel):
     title: str
     price_stars: int
     link: str
+    duration_days: int
     is_subscription: bool = False
 
 
@@ -36,7 +37,6 @@ class StarInvoicesResponse(BaseModel):
     ok: bool = True
     enabled: bool
     plans: Dict[str, StarInvoice]
-    subscription: StarInvoice | None = None
 
 
 _cache_lock = asyncio.Lock()
@@ -132,24 +132,12 @@ async def get_star_invoices() -> StarInvoicesResponse:
             title=plan.title,
             price_stars=plan.price_stars,
             link=link,
-            is_subscription=False,
-        )
-
-    subscription_invoice: StarInvoice | None = None
-    subscription_plan = STAR_SETTINGS.subscription_plan if STAR_SETTINGS.subscription_enabled else None
-    if subscription_plan:
-        link = await _get_invoice_link(subscription_plan)
-        subscription_invoice = StarInvoice(
-            plan=subscription_plan.code,
-            title=subscription_plan.title,
-            price_stars=subscription_plan.price_stars,
-            link=link,
-            is_subscription=True,
+            duration_days=plan.duration_days,
+            is_subscription=plan.is_subscription,
         )
 
     return StarInvoicesResponse(
         ok=True,
         enabled=True,
         plans=plans,
-        subscription=subscription_invoice,
     )

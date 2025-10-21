@@ -62,11 +62,11 @@ _PLAN_TITLES = {
 
 _PLAN_LABELS = {
     "test_1d": "Тест 24 часа",
-    "1m": "1 месяц",
-    "3m": "3 месяца",
-    "6m": "6 месяцев",
-    "1y": "12 месяцев",
-    "12m": "12 месяцев",
+    "1m": "Подписка на 1 месяц",
+    "3m": "Подписка на 3 месяца",
+    "6m": "Подписка на 6 месяцев",
+    "1y": "Подписка на 12 месяцев",
+    "12m": "Подписка на 12 месяцев",
     "sub_1m": "Ежемесячная подписка",
 }
 
@@ -80,7 +80,7 @@ _PLAN_DURATIONS = {
     "sub_1m": 30,
 }
 
-_SUBSCRIPTION_PERIOD_SECONDS = 30 * 24 * 60 * 60
+_SECONDS_IN_DAY = 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,7 @@ def _build_plan(code: str, price: int, *, subscription: bool = False) -> StarPla
     duration = resolve_plan_duration(code)
     title = _PLAN_TITLES.get(code, code)
     label = _PLAN_LABELS.get(code, title)
-    subscription_period = _SUBSCRIPTION_PERIOD_SECONDS if subscription else None
+    subscription_period = duration * _SECONDS_IN_DAY if subscription else None
     return StarPlan(
         code=code,
         price_stars=price,
@@ -149,34 +149,37 @@ def load_star_settings() -> StarSettings:
         price_6m = _parse_int("STARS_PRICE_6M", 0)
 
     price_year = _parse_int("STARS_PRICE_YEAR", 700)
-    subscription_enabled = _parse_bool(os.getenv("STARS_SUBSCRIPTION_ENABLED"), False)
+    # Все основные тарифы теперь оформляются по подписке, поэтому принудительно
+    # включаем режим подписок, даже если переменная окружения явно отключает его.
+    raw_subscription_env = os.getenv("STARS_SUBSCRIPTION_ENABLED")
+    subscription_enabled = True
+    if raw_subscription_env:
+        subscription_enabled = _parse_bool(raw_subscription_env, True)
+    if not subscription_enabled:
+        subscription_enabled = True
 
     plans: Dict[str, StarPlan] = {}
     test_plan = _build_plan("test_1d", price_test)
     if test_plan:
         plans[test_plan.code] = test_plan
-    month_plan = _build_plan("1m", price_month)
+    month_plan = _build_plan("1m", price_month, subscription=True)
     if month_plan:
         plans[month_plan.code] = month_plan
-    plan_3m = _build_plan("3m", price_3m)
+    plan_3m = _build_plan("3m", price_3m, subscription=True)
     if plan_3m:
         plans[plan_3m.code] = plan_3m
-    plan_6m = _build_plan("6m", price_6m)
+    plan_6m = _build_plan("6m", price_6m, subscription=True)
     if plan_6m:
         plans[plan_6m.code] = plan_6m
-    year_plan = _build_plan("1y", price_year)
+    year_plan = _build_plan("1y", price_year, subscription=True)
     if year_plan:
         plans[year_plan.code] = year_plan
 
-    subscription_plan = None
-    if subscription_enabled and month_plan:
-        subscription_plan = _build_plan("sub_1m", price_month, subscription=True)
-
     return StarSettings(
         enabled=enabled and bool(plans),
-        subscription_enabled=subscription_enabled and subscription_plan is not None,
+        subscription_enabled=subscription_enabled,
         plans=plans,
-        subscription_plan=subscription_plan,
+        subscription_plan=None,
     )
 
 

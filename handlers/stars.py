@@ -54,8 +54,9 @@ def _get_deps() -> StarHandlerDependencies:
 def _resolve_plan(plan_code: str) -> tuple[StarPlan | None, bool]:
     deps = _get_deps()
     settings = deps.settings
-    if plan_code in settings.plans:
-        return settings.plans[plan_code], False
+    plan = settings.plans.get(plan_code)
+    if plan:
+        return plan, plan.is_subscription
     sub_plan = settings.subscription_plan if settings.subscription_enabled else None
     if sub_plan and plan_code == sub_plan.code:
         return sub_plan, True
@@ -139,9 +140,13 @@ async def handle_star_purchase(callback: CallbackQuery) -> None:
     await deps.register_user(username, chat_id, user.username)
 
     try:
+        description = f"Доступ к VPN_GPT на {plan.title.lower()}"
+        if plan.is_subscription:
+            description = f"Подписка VPN_GPT на {plan.title.lower()} с автопродлением"
+
         invoice_message = await message.answer_invoice(
             title=f"VPN_GPT · {plan.title}",
-            description=f"Доступ к VPN_GPT на {plan.title.lower()}",
+            description=description,
             currency="XTR",
             prices=[LabeledPrice(label=plan.label, amount=plan.price_stars)],
             payload=build_invoice_payload(plan.code),

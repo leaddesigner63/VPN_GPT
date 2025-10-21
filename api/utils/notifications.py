@@ -110,14 +110,15 @@ class RenewalNotificationGenerator:
         for plan in settings.available_plans():
             if plan.code in excluded:
                 continue
-            if plan in extras or plan.is_subscription:
+            if plan in extras:
                 continue
             extras.append(plan)
         return test_plan, month_plan, extras
 
     @staticmethod
     def _format_plan(plan: StarPlan) -> str:
-        return f"{plan.title} — {plan.price_stars}⭐"
+        label = plan.label if plan.is_subscription else plan.title
+        return f"{label} — {plan.price_stars}⭐"
 
     def build_prompt(self, stage: int, job: NotificationJob) -> list[dict[str, str]]:
         username = job.username or "друг"
@@ -132,11 +133,11 @@ class RenewalNotificationGenerator:
             )
         if month_plan:
             plan_lines.append(
-                f"Месячный доступ теперь стоит {month_plan.price_stars}⭐ — цена уже обновлена."
+                f"Месячная подписка теперь стоит {month_plan.price_stars}⭐ — автопродление в Telegram."
             )
         if extra_plans:
             extras = ", ".join(self._format_plan(plan) for plan in extra_plans)
-            plan_lines.append(f"Другие тарифы без изменений: {extras}.")
+            plan_lines.append(f"Другие подписки без изменений: {extras}.")
         if not plan_lines:
             plan_lines.append("Доступ можно продлить через Telegram Stars — оплата занимает пару кликов.")
 
