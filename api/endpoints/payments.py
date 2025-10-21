@@ -180,7 +180,7 @@ def _ensure_subscription(username: str, chat_id: int | None, days: int) -> dict:
     if chat_id is not None:
         db.upsert_user(username, chat_id)
 
-    existing = db.extend_active_key(username, days=days)
+    existing = db.extend_active_key(username, days=days, is_subscription=True)
     if existing:
         return existing
 
@@ -197,6 +197,7 @@ def _ensure_subscription(username: str, chat_id: int | None, days: int) -> dict:
         label=label,
         country=DEFAULT_COUNTRY,
         trial=False,
+        is_subscription=True,
     )
 
 
@@ -225,6 +226,7 @@ def _award_referral_bonus(username: str) -> None:
             label=label,
             country=DEFAULT_COUNTRY,
             trial=False,
+            is_subscription=False,
         )
     db.log_referral_bonus(referrer, username, bonus_days)
     logger.info("Awarded referral bonus", extra={"referrer": referrer, "referee": username})

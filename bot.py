@@ -283,14 +283,25 @@ def _format_active_key_quick_start_message(active_keys: Sequence[dict[str, Any]]
 
     key = active_keys[0]
     expires_at = key.get("expires_at") or "—"
+    subscription_key = _find_active_subscription_key(active_keys)
 
     lines = [
         "🔐 <b>Доступ уже активен</b>",
         f"Текущий ключ действует до: {expires_at}",
         "",
-        "Продли подписку по действующим тарифам — выбери подходящий вариант ниже.",
-        "Если понадобится ключ ещё раз, открой раздел «🔑 Мои ключи».",
     ]
+    if subscription_key:
+        lines.append(
+            "Подписка обновляется автоматически — я напомню, если возникнут проблемы с оплатой."
+        )
+        lines.append(
+            "Управлять подпиской можно через «🔑 Мои ключи» или настройки Telegram."
+        )
+    else:
+        lines.append(
+            "Продли доступ по действующим тарифам — выбери подходящий вариант ниже."
+        )
+        lines.append("Если понадобится ключ ещё раз, открой раздел «🔑 Мои ключи».")
     return "\n".join(lines)
 
 
@@ -507,6 +518,8 @@ def _find_active_subscription_key(keys: Sequence[dict[str, Any]]) -> dict[str, A
         if not key.get("active"):
             continue
         if key.get("trial"):
+            continue
+        if not key.get("is_subscription"):
             continue
         return key
     return None
@@ -996,6 +1009,7 @@ async def renew_star_plan(username: str, plan_code: str, chat_id: int | None) ->
     if chat_id is not None:
         payload["chat_id"] = chat_id
 
+    plan = _get_star_plan(plan_code)
     try:
         duration_days = resolve_plan_duration(plan_code)
     except RuntimeError:
@@ -1007,6 +1021,9 @@ async def renew_star_plan(username: str, plan_code: str, chat_id: int | None) ->
         payload["days"] = duration_days
     else:
         raise RuntimeError(f"unknown_plan:{plan_code}")
+
+    if plan is not None:
+        payload["is_subscription"] = plan.is_subscription
 
     response = await api_post("/vpn/renew_key", payload)
     if not response.get("ok"):
@@ -1190,7 +1207,11 @@ async def handle_quick_start(call: CallbackQuery) -> None:
     active_keys = [key for key in keys if key.get("active")]
     if active_keys:
         text = _format_active_key_quick_start_message(active_keys)
-        reply_markup = build_payment_keyboard(username, message.chat.id, username)
+        subscription_key = _find_active_subscription_key(active_keys)
+        if subscription_key:
+            reply_markup = _build_main_menu_only_keyboard()
+        else:
+            reply_markup = build_payment_keyboard(username, message.chat.id, username)
         await edit_message_text_safe(message, text, reply_markup=reply_markup)
         await call.answer("Доступ уже активен")
         return
@@ -1292,6 +1313,10 @@ async def handle_my_keys(call: CallbackQuery) -> None:
             parts.append(
                 f"\n<b>#{idx}</b> · ✅ активен\nДействует до: {key.get('expires_at', '—')}"
             )
+            if key.get("is_subscription"):
+                parts.append("Формат: подписка с автопродлением.")
+            else:
+                parts.append("Формат: разовая активация.")
             if key.get("link"):
                 parts.append(f"<code>{key['link']}</code>")
         text = "\n".join(parts)
