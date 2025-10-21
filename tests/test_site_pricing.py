@@ -12,16 +12,17 @@ def test_site_pricing_reflects_environment(monkeypatch, tmp_path):
                 "VLESS_PORT=2053",
                 "BOT_PAYMENT_URL=https://vpn-gpt.store/pay",
                 "TRIAL_DAYS=0",
-                "PLANS=1m:150,6m:750,1y:1400",
+                "PLANS=1m:80,3m:200,1y:700",
                 "ADMIN_TOKEN=secret",
                 "INTERNAL_TOKEN=service",
                 "ADMIN_PANEL_PASSWORD=panelpass",
                 "REFERRAL_BONUS_DAYS=30",
                 "STARS_ENABLED=true",
-                "STARS_PRICE_TEST=30",
-                "STARS_PRICE_MONTH=150",
-                "STARS_PRICE_6M=750",
-                "STARS_PRICE_YEAR=1400",
+                "STARS_PRICE_TEST=20",
+                "STARS_PRICE_MONTH=80",
+                "STARS_PRICE_3M=200",
+                "STARS_PRICE_6M=0",
+                "STARS_PRICE_YEAR=700",
             ]
         ),
         encoding="utf-8",
@@ -52,9 +53,10 @@ def test_site_pricing_reflects_environment(monkeypatch, tmp_path):
     payload = response.json()
     assert payload["ok"] is True
     assert payload["test"]["code"] == "test_1d"
-    assert payload["test"]["price_stars"] == 30
+    assert payload["test"]["price_stars"] == 20
 
     prices = {plan["code"]: plan["price_stars"] for plan in payload["plans"]}
-    assert prices["1m"] == 150
-    assert prices["6m"] == 750
-    assert prices["1y"] == 1400
+    assert set(prices) == {"1m", "3m", "1y"}
+    assert prices["1m"] == 80
+    assert prices["3m"] == 200
+    assert prices["1y"] == 700
