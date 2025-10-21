@@ -4,6 +4,7 @@ from utils.stars import (
     STAR_PAYLOAD_PREFIX,
     build_invoice_payload,
     extract_plan_code_from_payload,
+    load_star_settings,
 )
 
 
@@ -35,3 +36,21 @@ def test_extract_plan_code_returns_none_for_invalid_payload() -> None:
 
     assert plan is None
     assert suffix is None
+
+
+def test_yearly_subscription_period_is_supported(monkeypatch) -> None:
+    monkeypatch.setenv("STARS_PRICE_TEST", "20")
+    monkeypatch.setenv("STARS_PRICE_MONTH", "80")
+    monkeypatch.setenv("STARS_PRICE_3M", "200")
+    monkeypatch.setenv("STARS_PRICE_6M", "0")
+    monkeypatch.setenv("STARS_PRICE_YEAR", "700")
+    monkeypatch.setenv("STARS_ENABLED", "true")
+    monkeypatch.setenv("STARS_SUBSCRIPTION_ENABLED", "true")
+
+    settings = load_star_settings()
+
+    yearly = settings.plans["1y"]
+
+    assert yearly.duration_days == 365
+    # Telegram принимает только кратные 30 дням значения для автопродления.
+    assert yearly.subscription_period == 360 * 24 * 60 * 60

@@ -88,6 +88,19 @@ _PLAN_DURATIONS = {
 
 _SECONDS_IN_DAY = 24 * 60 * 60
 
+# Telegram Stars принимает значения ``subscription_period`` только для фиксированного
+# набора длительностей (кратных 30 дням). Чтобы годовая подписка корректно
+# оформлялась как автопродление, явно подставляем допустимое значение периода,
+# оставляя при этом фактическую длительность доступа (365 дней) без изменений.
+_SUBSCRIPTION_PERIOD_DAYS = {
+    "sub_1m": 30,
+    "1m": 30,
+    "3m": 90,
+    "6m": 180,
+    "1y": 360,
+    "12m": 360,
+}
+
 
 @dataclass(frozen=True)
 class StarPlan:
@@ -131,7 +144,8 @@ def _build_plan(code: str, price: int, *, subscription: bool = False) -> StarPla
     duration = resolve_plan_duration(code)
     title = _PLAN_TITLES.get(code, code)
     label = _PLAN_LABELS.get(code, title)
-    subscription_period = duration * _SECONDS_IN_DAY if subscription else None
+    subscription_period_days = _SUBSCRIPTION_PERIOD_DAYS.get(code, duration)
+    subscription_period = subscription_period_days * _SECONDS_IN_DAY if subscription else None
     return StarPlan(
         code=code,
         price_stars=price,
