@@ -31,7 +31,7 @@ _build_invoice_markup = stars_module._build_invoice_markup
 
 
 def test_is_supported_button_link_accepts_http_and_https():
-    assert _is_supported_button_link("https://example.com")
+    assert _is_supported_button_link("https://vpn-gpt.store")
     assert _is_supported_button_link("http://example.com/path")
 
 

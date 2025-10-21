@@ -95,7 +95,7 @@ Telegram бот ↔ Custom GPT ↔ VPN API / Xray
    uvicorn api.main:app --host 0.0.0.0 --port 8000
    ```
 
-   При использовании доменного имени укажите его в `OPENAPI_SERVER_URL=https://example.com` — так панель будет формировать корректные ссылки на API.
+   При использовании доменного имени укажите его в `OPENAPI_SERVER_URL=https://vpn-gpt.store` — так панель будет формировать корректные ссылки на API.
 3. **Проксируйте трафик через HTTPS.** Настройте Nginx/Caddy/Traefik и пробросьте `/admin/ui` и `/admin/*` к backend-сервису, добавив, при необходимости, дополнительную HTTP Basic Auth.
 4. **Ограничьте доступ при работе без прокси.** Для точечного доступа достаточно SSH-туннеля: `ssh -L 8080:127.0.0.1:8000 user@server` и затем откройте `http://localhost:8080/admin/ui` в браузере.
 

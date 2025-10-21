@@ -409,7 +409,7 @@ def test_auto_update_adds_trial_column(tmp_path):
                 "legacy",
                 123,
                 "uuid-legacy",
-                "https://example.com",
+                "https://vpn-gpt.store",
                 "Legacy",
                 "US",
                 "2024-01-01T00:00:00",
