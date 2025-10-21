@@ -67,7 +67,6 @@
     .stars-status { margin-top: 12px; font-size: 13px; min-height: 18px; color: var(--muted); }
     .stars-status.error { color: #ff7b7b; }
     .stars-status.success { color: #7fffd4; }
-    .stars-subscription { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(90, 200, 250, 0.25); display: grid; gap: 10px; }
     @media (max-width: 540px) {
       .payment-form { padding: 24px; }
       .stars-heading { align-items: flex-start; }
@@ -91,7 +90,7 @@
   <section class="hero">
     <div class="container">
       <h1>Оплата подписки</h1>
-      <p>Выберите срок подписки — мы создадим счёт и перенаправим на защищённую страницу оплаты.</p>
+      <p>Все тарифы VPN_GPT оформляются по подписке Telegram Stars: вы выбираете срок, а оплата повторяется автоматически до отмены.</p>
       <div class="payment-form">
         <div class="status" style="margin-bottom:12px">
           Оплата картой временно недоступна. Используйте Telegram Stars — это безопасно и происходит прямо внутри мессенджера.
@@ -101,12 +100,11 @@
             <div class="stars-icon" aria-hidden="true">⭐️</div>
             <div>
               <p class="stars-title">Оплатить звёздами в Telegram</p>
-              <p class="stars-description">После оплаты бот мгновенно выдаст или продлит доступ. Тест на 24 часа стоит 20⭐, затем доступны тарифы: 1 месяц — 80⭐, 3 месяца — 200⭐, 12 месяцев — 700⭐.</p>
+              <p class="stars-description">После оплаты бот мгновенно выдаст или продлит доступ. Все планы — подписки с автопродлением: 1 месяц — 80⭐, 3 месяца — 200⭐, 12 месяцев — 700⭐.</p>
             </div>
           </div>
           <div class="stars-buttons" id="stars-buttons"></div>
-          <div class="stars-subscription" id="stars-subscription"></div>
-          <p class="stars-note">Если у вас ещё нет звёзд, Telegram предложит купить их перед оплатой — это займёт пару минут. Текущие клиенты продолжают пользоваться своими ключами до конца обещанного тестового периода, после чего переходят на новые тарифы.</p>
+          <p class="stars-note">Если у вас ещё нет звёзд, Telegram предложит купить их перед оплатой — это займёт пару минут. Управлять подпиской можно прямо в приложении Telegram: переходите в Настройки → Telegram Premium → Управление подписками.</p>
           <div class="stars-status" id="stars-status"></div>
         </div>
       </div>
@@ -126,7 +124,6 @@
     document.getElementById('py').textContent = new Date().getFullYear();
 
     const starsButtons = document.getElementById('stars-buttons');
-    const starsSubscription = document.getElementById('stars-subscription');
     const starsStatus = document.getElementById('stars-status');
 
     const formatStars = (value) => {
@@ -137,16 +134,27 @@
       return `${number.toLocaleString('ru-RU')}⭐`;
     };
 
-    const createStarsButton = (invoice, { subscription = false } = {}) => {
+    const createStarsButton = (invoice) => {
       const link = document.createElement('a');
-      link.className = `stars-btn${subscription ? ' stars-btn--subscription' : ''}`;
+      link.className = `stars-btn${invoice.is_subscription ? ' stars-btn--subscription' : ''}`;
       link.href = invoice.link;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.dataset.plan = invoice.plan;
-      const priceText = subscription ? `${formatStars(invoice.price_stars)}/мес` : formatStars(invoice.price_stars);
+      const priceText = invoice.is_subscription
+        ? `${formatStars(invoice.price_stars)}/${formatPeriod(invoice.duration_days)}`
+        : formatStars(invoice.price_stars);
       link.innerHTML = `<span>⭐</span><span>${invoice.title}</span><span>${priceText}</span>`;
       return link;
+    };
+
+    const formatPeriod = (durationDays) => {
+      if (durationDays === 30) return 'мес';
+      if (durationDays === 90) return '3 мес';
+      if (durationDays === 180) return '6 мес';
+      if (durationDays === 365 || durationDays === 360) return 'год';
+      if (durationDays === 1) return 'день';
+      return `${durationDays} дн`;
     };
 
     const setStarsStatus = (text, type) => {
@@ -177,11 +185,6 @@
         }
 
         starsButtons.innerHTML = '';
-        if (starsSubscription) {
-          starsSubscription.innerHTML = '';
-          starsSubscription.style.display = 'none';
-        }
-
         const order = ['test_1d', '1m', '3m', '1y'];
         const plans = data.plans || {};
         let added = 0;
@@ -200,20 +203,10 @@
             added += 1;
           });
 
-        if (data.subscription && starsSubscription) {
-          const subscriptionInvoice = data.subscription;
-          const subtitle = document.createElement('p');
-          subtitle.className = 'stars-description';
-          subtitle.textContent = 'Хотите, чтобы доступ продлевался автоматически?';
-          starsSubscription.appendChild(subtitle);
-          starsSubscription.appendChild(createStarsButton(subscriptionInvoice, { subscription: true }));
-          starsSubscription.style.display = 'grid';
-        }
-
-        if (added === 0 && !data.subscription) {
+        if (added === 0) {
           setStarsStatus('Пока нет доступных тарифов для оплаты звёздами.', 'error');
         } else {
-          setStarsStatus('Выберите тариф — оплата звёздами проходит прямо в Telegram.', 'success');
+          setStarsStatus('Выберите подписку — оплата звёздами проходит прямо в Telegram.', 'success');
         }
       } catch (error) {
         console.error(error);

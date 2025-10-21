@@ -233,13 +233,31 @@ PLAN_DISPLAY_LABELS = {
 
 STAR_SETTINGS: StarSettings = load_star_settings()
 STAR_PAY_PREFIX = "stars:buy:"
-STAR_SUBSCRIPTION_CODE = "sub_1m"
 
 
 def _get_star_plan(code: str) -> StarPlan | None:
     if not code:
         return None
     return STAR_SETTINGS.plans.get(code)
+
+
+def _format_subscription_period_label(duration_days: int) -> str:
+    if duration_days == 30:
+        return "мес"
+    if duration_days == 90:
+        return "3 мес"
+    if duration_days == 180:
+        return "6 мес"
+    if duration_days in (360, 365):
+        return "год"
+    return f"{duration_days} дн"
+
+
+def _format_star_plan_button(plan: StarPlan) -> str:
+    if plan.is_subscription:
+        period_label = _format_subscription_period_label(plan.duration_days)
+        return f"⭐️ {plan.title} подписка · {plan.price_stars}⭐/{period_label}"
+    return f"⭐️ {plan.title} · {plan.price_stars}⭐"
 
 
 def _ordered_star_plans(settings: StarSettings) -> list[StarPlan]:
@@ -252,7 +270,7 @@ def _ordered_star_plans(settings: StarSettings) -> list[StarPlan]:
             ordered.append(plan)
             seen.add(plan.code)
     for plan in settings.available_plans():
-        if plan.is_subscription or plan.code in seen:
+        if plan.code in seen:
             continue
         ordered.append(plan)
         seen.add(plan.code)
@@ -451,19 +469,8 @@ def build_payment_keyboard(username: str, chat_id: int | None, ref: str | None) 
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"⭐️ {plan.title} · {plan.price_stars}⭐",
+                    text=_format_star_plan_button(plan),
                     callback_data=f"{STAR_PAY_PREFIX}{plan.code}",
-                )
-            ]
-        )
-
-    if STAR_SETTINGS.subscription_enabled and STAR_SETTINGS.subscription_plan:
-        sub_plan = STAR_SETTINGS.subscription_plan
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=f"⭐️ {sub_plan.title} · {sub_plan.price_stars}⭐",
-                    callback_data=f"{STAR_PAY_PREFIX}{sub_plan.code}",
                 )
             ]
         )
