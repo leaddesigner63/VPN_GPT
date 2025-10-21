@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 __all__ = [
     "StarPlan",
@@ -11,7 +12,11 @@ __all__ = [
     "resolve_plan_duration",
     "build_invoice_payload",
     "build_invoice_request_data",
+    "extract_plan_code_from_payload",
+    "STAR_PAYLOAD_PREFIX",
 ]
+
+STAR_PAYLOAD_PREFIX = "stars:buy:"
 
 _ALLOWED_BOOL_TRUE = {"1", "true", "yes", "y", "on", "enable", "enabled"}
 _ALLOWED_BOOL_FALSE = {"0", "false", "no", "n", "off", "disable", "disabled"}
@@ -96,7 +101,10 @@ class StarPlan:
 
     @property
     def payload(self) -> str:
-        return build_invoice_payload(self.code)
+        # Historically the ``payload`` attribute returned a deterministic
+        # value that matched the callback prefix. Keep this behaviour by
+        # omitting the per-invoice suffix used for Telegram payments.
+        return build_invoice_payload(self.code, unique=False)
 
 
 @dataclass(frozen=True)
@@ -184,8 +192,62 @@ def load_star_settings() -> StarSettings:
     )
 
 
-def build_invoice_payload(plan_code: str) -> str:
-    return f"stars:buy:{plan_code}"
+def build_invoice_payload(plan_code: str, *, unique: bool = True) -> str:
+    """Return a payload string for Telegram Stars invoices.
+
+    Telegram requires the payload to be unique for every invoice created
+    through :meth:`createInvoiceLink`. Otherwise the API rejects the
+    request with ``400 Bad Request``. To avoid this we append a
+    per-invoice suffix by default while keeping the legacy behaviour
+    available via ``unique=False`` for places that rely on a static
+    prefix (e.g. callback data).
+    """
+
+    base_payload = f"{STAR_PAYLOAD_PREFIX}{plan_code}"
+    if not unique:
+        return base_payload
+    suffix = uuid.uuid4().hex
+    return f"{base_payload}:{suffix}"
+
+
+def extract_plan_code_from_payload(
+    payload: str,
+    *,
+    prefix: str = STAR_PAYLOAD_PREFIX,
+) -> Tuple[str | None, str | None]:
+    """Extract the plan code and unique suffix from an invoice payload.
+
+    Parameters
+    ----------
+    payload:
+        The raw payload string provided by Telegram.
+    prefix:
+        Expected prefix that marks Stars invoices.
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        A pair ``(plan_code, unique_suffix)`` where each element may be
+        ``None`` if the payload does not match the expected format.
+    """
+
+    if not payload or not payload.startswith(prefix):
+        return None, None
+
+    remainder = payload[len(prefix) :]
+    if not remainder:
+        return None, None
+
+    if ":" in remainder:
+        plan_code, unique = remainder.split(":", 1)
+        unique = unique.strip() or None
+    else:
+        plan_code, unique = remainder, None
+
+    plan_code = plan_code.strip()
+    if not plan_code:
+        return None, unique
+    return plan_code, unique
 
 
 def build_invoice_request_data(plan: StarPlan, *, include_subscription_period: bool = True) -> dict[str, Any]:
