@@ -39,7 +39,14 @@ from handlers.stars import (
 )
 from utils.content_filters import assert_no_geoblocking, sanitize_text
 from utils.qrgen import make_qr
-from utils.stars import StarPlan, StarSettings, build_invoice_payload, load_star_settings, resolve_plan_duration
+from utils.stars import (
+    STAR_PAYLOAD_PREFIX,
+    StarPlan,
+    StarSettings,
+    build_invoice_payload,
+    load_star_settings,
+    resolve_plan_duration,
+)
 
 load_dotenv()
 
@@ -232,7 +239,7 @@ PLAN_DISPLAY_LABELS = {
 }
 
 STAR_SETTINGS: StarSettings = load_star_settings()
-STAR_PAY_PREFIX = "stars:buy:"
+STAR_PAY_PREFIX = STAR_PAYLOAD_PREFIX
 
 
 def _get_star_plan(code: str) -> StarPlan | None:

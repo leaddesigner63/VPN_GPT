@@ -17,13 +17,15 @@ from aiogram.types import (
 
 from api.utils.telegram import TelegramInvoiceError, create_invoice_link
 from utils.stars import (
+    STAR_PAYLOAD_PREFIX,
     StarPlan,
     StarSettings,
     build_invoice_payload,
     build_invoice_request_data,
+    extract_plan_code_from_payload,
 )
 
-STAR_CALLBACK_PREFIX = "stars:buy:"
+STAR_CALLBACK_PREFIX = STAR_PAYLOAD_PREFIX
 
 router = Router(name="stars")
 @dataclass(slots=True)
@@ -233,11 +235,11 @@ async def handle_star_purchase(callback: CallbackQuery) -> None:
 async def handle_pre_checkout(query: PreCheckoutQuery) -> None:
     deps = _get_deps()
     payload = query.invoice_payload or ""
-    if not payload.startswith(deps.pay_prefix):
+    plan_code, _ = extract_plan_code_from_payload(payload, prefix=deps.pay_prefix)
+    if not plan_code:
         await query.answer(ok=True)
         return
 
-    plan_code = payload[len(deps.pay_prefix) :]
     plan, _ = _resolve_plan(plan_code)
     if plan is None or not deps.settings.enabled:
         await query.answer(ok=False, error_message="Тариф недоступен. Попробуйте позже.")
@@ -258,10 +260,10 @@ async def handle_successful_payment(message: Message) -> None:
         return
 
     payload = payment.invoice_payload or ""
-    if not payload.startswith(deps.pay_prefix):
+    plan_code, unique_suffix = extract_plan_code_from_payload(payload, prefix=deps.pay_prefix)
+    if not plan_code:
         return
 
-    plan_code = payload[len(deps.pay_prefix) :]
     plan, is_subscription = _resolve_plan(plan_code)
     if plan is None:
         deps.logger.error("Received Stars payment for unknown plan", extra={"payload": payload})
@@ -270,6 +272,12 @@ async def handle_successful_payment(message: Message) -> None:
             "⭐️ Платёж принят, но тариф не распознан. Поддержка уже уведомлена.",
         )
         return
+
+    if unique_suffix:
+        deps.logger.debug(
+            "Resolved Stars invoice payload suffix",
+            extra={"plan": plan.code, "suffix": unique_suffix},
+        )
 
     user = message.from_user
     if user is None:
