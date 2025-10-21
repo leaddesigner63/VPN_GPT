@@ -133,7 +133,7 @@ MAX_HISTORY_MESSAGES = _get_int_env("GPT_HISTORY_MESSAGES", 6)
 VPN_API_URL = os.getenv("VPN_API_URL", "http://127.0.0.1:8080")
 SERVICE_TOKEN = os.getenv("INTERNAL_TOKEN") or os.getenv("ADMIN_TOKEN", "")
 BOT_PAYMENT_URL = os.getenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/payment.html").rstrip("/")
-PLAN_ENV = os.getenv("PLANS", "1m:180,3m:460,12m:1450")
+PLAN_ENV = os.getenv("PLANS", "1m:80,3m:200,1y:700")
 TEST_PLAN_CODE = os.getenv("STARS_TEST_PLAN_CODE", "test_1d")
 
 
@@ -216,13 +216,20 @@ def _parse_plans(raw: str) -> Dict[str, int]:
             plans[code.strip()] = int(price.strip())
         except ValueError:
             logger.warning("Invalid plan price", extra={"plan": chunk})
-    return plans or {"1m": 180, "3m": 450, "12m": 1450}
+    return plans or {"1m": 80, "3m": 200, "1y": 700}
 
 
 PLANS = _parse_plans(PLAN_ENV)
-PLAN_ORDER = [code for code in ("1m", "3m", "12m") if code in PLANS] + [
-    code for code in PLANS.keys() if code not in {"1m", "3m", "12m"}
+PLAN_ORDER = [code for code in ("1m", "3m", "1y", "12m") if code in PLANS] + [
+    code for code in PLANS.keys() if code not in {"1m", "3m", "1y", "12m"}
 ]
+
+PLAN_DISPLAY_LABELS = {
+    "1m": "1 месяц",
+    "3m": "3 месяца",
+    "1y": "12 месяцев",
+    "12m": "12 месяцев",
+}
 
 STAR_SETTINGS: StarSettings = load_star_settings()
 STAR_PAY_PREFIX = "stars:buy:"
@@ -472,10 +479,11 @@ def build_card_payment_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     for plan in PLAN_ORDER:
         price = PLANS[plan]
+        label = PLAN_DISPLAY_LABELS.get(plan, plan.upper())
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{plan.upper()} · {price} ₽",
+                    text=f"{label} · {price}⭐",
                     callback_data=f"{PAY_PLAN_PREFIX}{plan}",
                 )
             ]
@@ -1254,6 +1262,10 @@ async def handle_pay(call: CallbackQuery) -> None:
             text = "Выбери тариф и оплати звёздами прямо в Telegram."
     else:
         text = "Оплата временно недоступна. Напиши в чат, и я помогу оформить доступ вручную."
+    text += (
+        "\n\nℹ️ Уже действующие клиенты пользуются своими ключами до конца обещанного тестового периода."
+        " После завершения доступа нужно будет выбрать один из новых тарифов."
+    )
     keyboard = build_payment_keyboard(username, message.chat.id, username)
     await edit_message_text_safe(message, text, reply_markup=keyboard)
     await call.answer()
@@ -1304,7 +1316,7 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
     payment_url = build_payment_page_url(username, plan, chat_id, user.username, user.id)
     amount = PLANS.get(plan)
     if amount is not None:
-        price_text = f"Сумма к оплате: {amount} ₽."
+        price_text = f"Сумма к оплате: {amount}⭐."
     else:
         price_text = ""
 
@@ -1312,8 +1324,9 @@ async def handle_pay_plan(call: CallbackQuery) -> None:
         "Redirecting user to payment page",
         extra={"plan": plan, "username": username, "chat_id": chat_id},
     )
+    plan_label = PLAN_DISPLAY_LABELS.get(plan, plan.upper())
     text_parts = [
-        f"💳 Тариф {plan.upper()} готов к оплате.",
+        f"💳 Тариф {plan_label} готов к оплате.",
         "Нажми «Оплатить», мы передадим данные на сайт и сформируем ссылку оплаты.",
     ]
     if price_text:

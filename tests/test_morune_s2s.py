@@ -30,7 +30,7 @@ def morune_app(tmp_path, monkeypatch) -> MoruneTestEnv:
                 "VLESS_HOST=test.example",
                 "VLESS_PORT=2053",
                 "BOT_PAYMENT_URL=https://vpn-gpt.store",
-                "PLANS=1m:180,3m:460,1y:1450",
+                "PLANS=1m:80,3m:200,1y:700",
                 "MORUNE_API_KEY=test-api",
                 "MORUNE_SHOP_ID=shop-123",
                 "MORUNE_WEBHOOK_SECRET=hook-secret",

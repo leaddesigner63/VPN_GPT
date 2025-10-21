@@ -11,7 +11,7 @@ def test_prepare_metadata_serialises_complex_values(monkeypatch) -> None:
     monkeypatch.setenv("VLESS_HOST", "test.example")
     monkeypatch.setenv("VLESS_PORT", "2053")
     monkeypatch.setenv("BOT_PAYMENT_URL", "https://vpn-gpt.store")
-    monkeypatch.setenv("PLANS", "1m:180")
+    monkeypatch.setenv("PLANS", "1m:80")
     monkeypatch.setenv("BOT_TOKEN", "token")
     monkeypatch.setenv("GPT_API_KEY", "gpt")
     monkeypatch.setenv("ADMIN_PANEL_PASSWORD", "panelpass")
