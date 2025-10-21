@@ -5,6 +5,7 @@ import sys
 from importlib import util
 from pathlib import Path
 
+import pytest
 from aiogram.types import InlineKeyboardButton
 
 os.environ.setdefault("BOT_TOKEN", "123456:TESTTOKEN")
@@ -20,6 +21,7 @@ _BOT_SPEC.loader.exec_module(bot_module)
 
 _is_supported_button_link = bot_module._is_supported_button_link
 build_result_markup = bot_module.build_result_markup
+_format_active_key_quick_start_message = bot_module._format_active_key_quick_start_message
 
 
 def test_is_supported_button_link_accepts_http_and_https():
@@ -86,3 +88,26 @@ def test_build_result_markup_contains_action_buttons():
 
     expected_actions = {"menu_quick", "menu_keys", "menu_pay", "menu_help", "menu_back"}
     assert expected_actions.issubset(callback_data)
+
+
+def test_format_active_key_quick_start_message_includes_expiry():
+    message = _format_active_key_quick_start_message([
+        {"expires_at": "2024-06-01T12:00:00", "active": 1},
+    ])
+
+    assert "Текущий ключ действует до: 2024-06-01T12:00:00" in message
+    assert "Продли подписку" in message
+
+
+def test_format_active_key_quick_start_message_handles_missing_expiry():
+    message = _format_active_key_quick_start_message([
+        {"expires_at": None, "active": 1},
+    ])
+
+    assert "Текущий ключ действует до: —" in message
+    assert "🔑 Мои ключи" in message
+
+
+def test_format_active_key_quick_start_message_requires_active_keys():
+    with pytest.raises(ValueError):
+        _format_active_key_quick_start_message([])
