@@ -1,5 +1,6 @@
 """Tests for helper functions used to build bot inline keyboards."""
 
+import importlib
 import os
 import sys
 from importlib import util
@@ -19,11 +20,14 @@ assert _BOT_SPEC and _BOT_SPEC.loader  # for type checkers
 bot_module = util.module_from_spec(_BOT_SPEC)
 _BOT_SPEC.loader.exec_module(bot_module)
 
+stars_module = importlib.import_module("handlers.stars")
+
 _is_supported_button_link = bot_module._is_supported_button_link
 build_result_markup = bot_module.build_result_markup
 _format_active_key_quick_start_message = bot_module._format_active_key_quick_start_message
 _should_offer_tariffs = bot_module._should_offer_tariffs
 _format_active_subscription_notice = bot_module._format_active_subscription_notice
+_build_invoice_markup = stars_module._build_invoice_markup
 
 
 def test_is_supported_button_link_accepts_http_and_https():
@@ -90,6 +94,19 @@ def test_build_result_markup_contains_action_buttons():
 
     expected_actions = {"menu_quick", "menu_keys", "menu_pay", "menu_help", "menu_back"}
     assert expected_actions.issubset(callback_data)
+
+
+def test_stars_invoice_markup_contains_pay_button():
+    markup = _build_invoice_markup()
+
+    pay_buttons = [
+        button
+        for row in markup.inline_keyboard
+        for button in row
+        if isinstance(button, InlineKeyboardButton) and getattr(button, "pay", False)
+    ]
+
+    assert pay_buttons
 
 
 def test_format_active_key_quick_start_message_includes_subscription_notice():
