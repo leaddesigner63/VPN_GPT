@@ -50,6 +50,7 @@ Telegram бот ↔ Custom GPT ↔ VPN API / Xray
 1. Скопируйте файл `.env.example` в `.env` и заполните его на сервере.
 2. Укажите ключевые переменные:
    - `BOT_TOKEN` и `GPT_API_KEY` — токены Telegram-бота и OpenAI.
+   - `BASE_BOT_URL` — URL Telegram Bot API. Используйте значение по умолчанию `https://api.telegram.org` или укажите прокси, если прямой доступ заблокирован.
    - `VLESS_HOST` и `VLESS_PORT` — адрес и порт вашего VPN-сервера.
    - `ADMIN_PANEL_PASSWORD` — пароль для входа в админ-панель.
    - `PLANS=1m:80,3m:200,1y:700` — согласованный прайс на звёзды (1 месяц — 80⭐, 3 месяца — 200⭐, 12 месяцев — 700⭐). Эти значения используют все сервисы вне Telegram Stars.
