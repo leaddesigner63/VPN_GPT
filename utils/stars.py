@@ -54,6 +54,7 @@ _PLAN_TITLES = {
     "test_1d": "Тест на 24 часа",
     "1m": "1 месяц",
     "3m": "3 месяца",
+    "6m": "6 месяцев",
     "1y": "12 месяцев",
     "12m": "12 месяцев",
     "sub_1m": "Подписка на 1 месяц",
@@ -63,6 +64,7 @@ _PLAN_LABELS = {
     "test_1d": "Тест 24 часа",
     "1m": "1 месяц",
     "3m": "3 месяца",
+    "6m": "6 месяцев",
     "1y": "12 месяцев",
     "12m": "12 месяцев",
     "sub_1m": "Ежемесячная подписка",
@@ -72,6 +74,7 @@ _PLAN_DURATIONS = {
     "test_1d": 1,
     "1m": 30,
     "3m": 90,
+    "6m": 180,
     "1y": 365,
     "12m": 365,
     "sub_1m": 30,
@@ -134,9 +137,13 @@ def _build_plan(code: str, price: int, *, subscription: bool = False) -> StarPla
 def load_star_settings() -> StarSettings:
     enabled = _parse_bool(os.getenv("STARS_ENABLED"), True)
     price_test = _parse_int("STARS_PRICE_TEST", 20)
-    price_month = _parse_int("STARS_PRICE_MONTH", 80)
-    price_3m = _parse_int("STARS_PRICE_3M", 200)
-    price_year = _parse_int("STARS_PRICE_YEAR", 700)
+    price_month = _parse_int("STARS_PRICE_MONTH", 120)
+    if os.getenv("STARS_PRICE_6M") is None and os.getenv("STARS_PRICE_3M") is not None:
+        price_6m = _parse_int("STARS_PRICE_3M", 200)
+    else:
+        price_6m = _parse_int("STARS_PRICE_6M", 600)
+    price_3m = _parse_int("STARS_PRICE_3M", 0)
+    price_year = _parse_int("STARS_PRICE_YEAR", 1100)
     subscription_enabled = _parse_bool(os.getenv("STARS_SUBSCRIPTION_ENABLED"), False)
 
     plans: Dict[str, StarPlan] = {}
@@ -149,6 +156,9 @@ def load_star_settings() -> StarSettings:
     plan_3m = _build_plan("3m", price_3m)
     if plan_3m:
         plans[plan_3m.code] = plan_3m
+    plan_6m = _build_plan("6m", price_6m)
+    if plan_6m:
+        plans[plan_6m.code] = plan_6m
     year_plan = _build_plan("1y", price_year)
     if year_plan:
         plans[year_plan.code] = year_plan
