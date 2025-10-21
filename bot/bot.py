@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Any
+from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -108,6 +108,39 @@ _qr_messages = _QrMessageTracker()
 _qr_links = _QrLinkStorage()
 
 
+class _SingleMessageManager:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._messages: dict[int, int] = {}
+
+    async def send(
+        self,
+        source: Message,
+        sender: Callable[[], Awaitable[Message]],
+    ) -> Message:
+        chat_id = source.chat.id
+        async with self._lock:
+            previous_id = self._messages.get(chat_id)
+            if previous_id is not None:
+                try:
+                    await bot.delete_message(chat_id, previous_id)
+                except Exception:
+                    logger.debug(
+                        "Failed to delete previous bot message",
+                        extra={"chat_id": chat_id, "message_id": previous_id},
+                    )
+            message = await sender()
+            self._messages[chat_id] = message.message_id
+            return message
+
+    async def remember(self, message: Message) -> None:
+        async with self._lock:
+            self._messages[message.chat.id] = message.message_id
+
+
+_single_messages = _SingleMessageManager()
+
+
 class _QrCleanupMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):  # type: ignore[override]
         chat_id: int | None = None
@@ -141,6 +174,17 @@ async def _delete_previous_qr(chat_id: int) -> None:
             "Failed to delete previous QR message",
             extra={"chat_id": chat_id, "message_id": message_id},
         )
+
+
+async def send_single_message(
+    message: Message,
+    text: str,
+    **kwargs: Any,
+) -> Message:
+    async def _send() -> Message:
+        return await message.answer(text, **kwargs)
+
+    return await _single_messages.send(message, _send)
 
 
 _qr_cleanup_middleware = _QrCleanupMiddleware()
@@ -346,7 +390,7 @@ async def start(msg: Message):
         f"{trial_message}\n"
         "\nВыбери действие в меню ниже, и я всё сделаю за тебя."
     )
-    await msg.answer(greeting, reply_markup=build_main_menu())
+    await send_single_message(msg, greeting, reply_markup=build_main_menu())
 
 
 @dp.message(Command("buy"))
@@ -369,7 +413,8 @@ async def renew(msg: Message):
 
 async def handle_issue_key(message: Message, username: str) -> None:
     await _delete_previous_qr(message.chat.id)
-    await message.answer(
+    await send_single_message(
+        message,
         _safe_text(
             "Сейчас тестовый доступ выдаётся за 20⭐ в Telegram. Открой основной бот @dobriyvpn_bot, оплати тест и получи ключ "
             "мгновенно. Если нужна помощь — просто напиши мне."
@@ -380,7 +425,8 @@ async def handle_issue_key(message: Message, username: str) -> None:
 
 async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer(
+    progress = await send_single_message(
+        message,
         _safe_text("🔎 Проверяю информацию о твоём ключе…"),
         reply_markup=build_result_markup(),
     )
@@ -414,7 +460,8 @@ async def handle_get_key(message: Message, username: str, chat_id: int) -> None:
 
 async def handle_renew_key(message: Message, username: str, chat_id: int) -> None:
     await _delete_previous_qr(message.chat.id)
-    progress = await message.answer(
+    progress = await send_single_message(
+        message,
         _safe_text("♻️ Продлеваю срок действия твоего ключа…"),
         reply_markup=build_result_markup(),
     )
@@ -518,7 +565,8 @@ async def show_menu(callback: CallbackQuery):
     if not callback.message:
         return
     await _delete_previous_qr(callback.message.chat.id)
-    await callback.message.answer(
+    await send_single_message(
+        callback.message,
         _safe_text("Выбери нужное действие:"),
         reply_markup=build_main_menu(),
     )
