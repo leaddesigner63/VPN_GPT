@@ -92,18 +92,37 @@ def test_build_result_markup_contains_action_buttons():
     assert expected_actions.issubset(callback_data)
 
 
-def test_format_active_key_quick_start_message_includes_expiry():
+def test_format_active_key_quick_start_message_includes_subscription_notice():
     message = _format_active_key_quick_start_message([
-        {"expires_at": "2024-06-01T12:00:00", "active": 1},
+        {
+            "expires_at": "2024-06-01T12:00:00",
+            "active": 1,
+            "is_subscription": True,
+        },
     ])
 
     assert "Текущий ключ действует до: 2024-06-01T12:00:00" in message
-    assert "Продли подписку" in message
+    assert "Подписка обновляется автоматически" in message
+
+
+def test_format_active_key_quick_start_message_prompts_extension_without_subscription():
+    message = _format_active_key_quick_start_message([
+        {
+            "expires_at": "2024-07-10T08:00:00",
+            "active": 1,
+            "trial": False,
+            "is_subscription": False,
+        },
+    ])
+
+    assert "Текущий ключ действует до: 2024-07-10T08:00:00" in message
+    assert "Продли доступ" in message
+    assert "Подписка обновляется автоматически" not in message
 
 
 def test_format_active_key_quick_start_message_handles_missing_expiry():
     message = _format_active_key_quick_start_message([
-        {"expires_at": None, "active": 1},
+        {"expires_at": None, "active": 1, "is_subscription": False},
     ])
 
     assert "Текущий ключ действует до: —" in message
@@ -117,8 +136,8 @@ def test_format_active_key_quick_start_message_requires_active_keys():
 
 def test_should_offer_tariffs_permits_trial_access():
     keys = [
-        {"active": 1, "trial": True},
-        {"active": 0, "trial": False},
+        {"active": 1, "trial": True, "is_subscription": False},
+        {"active": 0, "trial": False, "is_subscription": False},
     ]
 
     assert _should_offer_tariffs(keys)
@@ -126,8 +145,8 @@ def test_should_offer_tariffs_permits_trial_access():
 
 def test_should_offer_tariffs_blocks_active_subscription():
     keys = [
-        {"active": 1, "trial": False},
-        {"active": 1, "trial": True},
+        {"active": 1, "trial": False, "is_subscription": True},
+        {"active": 1, "trial": True, "is_subscription": False},
     ]
 
     assert not _should_offer_tariffs(keys)

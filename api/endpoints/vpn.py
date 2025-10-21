@@ -47,6 +47,9 @@ class RenewKeyRequest(BaseModel):
     chat_id: int | None = Field(None)
     country: str | None = Field(None)
     label: str | None = Field(None)
+    is_subscription: bool | None = Field(
+        None, description="Флаг подписки (True для автопродления)"
+    )
 
 
 class KeyResponse(BaseModel):
@@ -57,6 +60,7 @@ class KeyResponse(BaseModel):
     expires_at: str
     trial: bool = False
     reused: bool = False
+    is_subscription: bool = False
 
 
 def _build_key_response(payload: dict[str, Any], *, reused: bool = False) -> KeyResponse:
@@ -67,6 +71,7 @@ def _build_key_response(payload: dict[str, Any], *, reused: bool = False) -> Key
         expires_at=payload["expires_at"],
         trial=bool(payload.get("trial", False)),
         reused=reused,
+        is_subscription=bool(payload.get("is_subscription", False)),
     )
 
 
@@ -105,7 +110,9 @@ def renew_key(request: RenewKeyRequest, _: None = Depends(require_service_token)
         db.upsert_user(username, request.chat_id)
 
     duration_days, plan_code = _resolve_duration(request.plan, request.days)
-    existing = db.extend_active_key(username, days=duration_days)
+    existing = db.extend_active_key(
+        username, days=duration_days, is_subscription=request.is_subscription
+    )
     if existing:
         logger.info(
             "Extended existing key",
@@ -126,6 +133,7 @@ def renew_key(request: RenewKeyRequest, _: None = Depends(require_service_token)
         label=label,
         country=request.country or config.DEFAULT_COUNTRY,
         trial=False,
+        is_subscription=bool(request.is_subscription),
     )
     logger.info(
         "Created new key during renewal",

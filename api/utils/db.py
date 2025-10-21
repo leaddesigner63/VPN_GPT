@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS vpn_keys (
   label TEXT,
   country TEXT,
   trial INTEGER NOT NULL DEFAULT 0,
+  is_subscription INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   issued_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
@@ -290,6 +291,16 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
     return {key: row[key] for key in row.keys()}
 
 
+def _normalise_key_row(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    result = dict(row)
+    result["trial"] = bool(result.get("trial"))
+    result["active"] = bool(result.get("active"))
+    result["is_subscription"] = bool(result.get("is_subscription"))
+    return result
+
+
 def upsert_thread(tg_user_id: str, thread_id: str) -> None:
     now = _utcnow().isoformat()
     with connect() as con:
@@ -414,7 +425,7 @@ def get_active_key(username: str) -> dict | None:
                 (normalise_username(username),),
             )
             row = cur.fetchone()
-        return _row_to_dict(row)
+        return _normalise_key_row(_row_to_dict(row))
 
     return _run_with_schema_retry(_operation)
 
@@ -424,7 +435,7 @@ def get_key_by_uuid(uuid_value: str) -> dict | None:
         with connect() as con:
             cur = con.execute("SELECT * FROM vpn_keys WHERE uuid=?", (uuid_value,))
             row = cur.fetchone()
-        return _row_to_dict(row)
+        return _normalise_key_row(_row_to_dict(row))
 
     return _run_with_schema_retry(_operation)
 
@@ -538,7 +549,7 @@ def list_user_keys(username: str) -> list[dict]:
                 (normalise_username(username),),
             )
             rows = cur.fetchall()
-        return [_row_to_dict(row) for row in rows]
+        return [_normalise_key_row(_row_to_dict(row)) or {} for row in rows]
 
     return _run_with_schema_retry(_operation)
 
@@ -553,6 +564,7 @@ def create_vpn_key(
     label: str | None = None,
     country: str | None = None,
     trial: bool = False,
+    is_subscription: bool = False,
 ) -> dict:
     username = normalise_username(username)
     issued_at = _utcnow().isoformat()
@@ -563,10 +575,21 @@ def create_vpn_key(
         with connect() as con:
             cur = con.execute(
                 """
-                INSERT INTO vpn_keys (username, chat_id, uuid, link, label, country, trial, active, issued_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                INSERT INTO vpn_keys (username, chat_id, uuid, link, label, country, trial, is_subscription, active, issued_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (username, chat_id, uuid_value, link, label, country, int(trial), issued_at, expires_iso),
+                (
+                    username,
+                    chat_id,
+                    uuid_value,
+                    link,
+                    label,
+                    country,
+                    int(trial),
+                    1 if is_subscription else 0,
+                    issued_at,
+                    expires_iso,
+                ),
             )
             key_id = cur.lastrowid
         return {
@@ -577,7 +600,8 @@ def create_vpn_key(
             "link": link,
             "label": label,
             "country": country,
-            "trial": trial,
+            "trial": bool(trial),
+            "is_subscription": bool(is_subscription),
             "active": True,
             "issued_at": issued_at,
             "expires_at": expires_iso,
@@ -613,18 +637,33 @@ def create_vpn_key(
     return payload
 
 
-def update_key_expiry(uuid_value: str, expires_at: datetime) -> None:
+def update_key_expiry(
+    uuid_value: str, expires_at: datetime, *, is_subscription: bool | None = None
+) -> None:
     expires_iso = expires_at.replace(microsecond=0).isoformat()
 
     def _operation() -> None:
         with connect() as con:
-            con.execute(
-                "UPDATE vpn_keys SET expires_at=?, active=1 WHERE uuid=?",
-                (expires_iso, uuid_value),
-            )
+            if is_subscription is None:
+                con.execute(
+                    "UPDATE vpn_keys SET expires_at=?, active=1 WHERE uuid=?",
+                    (expires_iso, uuid_value),
+                )
+            else:
+                con.execute(
+                    "UPDATE vpn_keys SET expires_at=?, active=1, is_subscription=? WHERE uuid=?",
+                    (expires_iso, 1 if is_subscription else 0, uuid_value),
+                )
 
     _run_with_schema_retry(_operation)
-    logger.info("Updated key expiry", extra={"uuid": uuid_value, "expires_at": expires_iso})
+    logger.info(
+        "Updated key expiry",
+        extra={
+            "uuid": uuid_value,
+            "expires_at": expires_iso,
+            "is_subscription": is_subscription,
+        },
+    )
 
 
 def deactivate_key(uuid_value: str) -> None:
@@ -1447,7 +1486,9 @@ def get_referral_stats(referrer: str) -> dict:
     return _run_with_schema_retry(_operation)
 
 
-def extend_active_key(username: str, *, days: int) -> dict | None:
+def extend_active_key(
+    username: str, *, days: int, is_subscription: bool | None = None
+) -> dict | None:
     username = normalise_username(username)
     key = get_active_key(username)
     now = _utcnow()
@@ -1456,8 +1497,10 @@ def extend_active_key(username: str, *, days: int) -> dict | None:
         if current_expiry < now:
             current_expiry = now
         new_expiry = current_expiry + timedelta(days=days)
-        update_key_expiry(key["uuid"], new_expiry)
+        update_key_expiry(key["uuid"], new_expiry, is_subscription=is_subscription)
         key["expires_at"] = new_expiry.replace(microsecond=0).isoformat()
+        if is_subscription is not None:
+            key["is_subscription"] = bool(is_subscription)
         return key
     return None
 
@@ -1512,6 +1555,19 @@ def auto_update_missing_fields(*, db_path: Path | str | None = None) -> None:  #
                 )
                 logger.info(
                     "Successfully added 'trial' column to vpn_keys table", extra={"path": str(resolved)}
+                )
+
+            if "is_subscription" not in columns:
+                logger.warning(
+                    "Adding missing 'is_subscription' column to vpn_keys table",
+                    extra={"path": str(resolved)},
+                )
+                con.execute(
+                    "ALTER TABLE vpn_keys ADD COLUMN is_subscription INTEGER NOT NULL DEFAULT 0"
+                )
+                logger.info(
+                    "Successfully added 'is_subscription' column to vpn_keys table",
+                    extra={"path": str(resolved)},
                 )
 
             if "active" not in columns:

@@ -91,6 +91,7 @@ def get_user_keys(
 
     for key in keys:
         key["trial"] = bool(key.get("trial"))
+        key["is_subscription"] = bool(key.get("is_subscription"))
 
     logger.info(
         "Returned keys for user",

@@ -1429,6 +1429,11 @@
             "type": "boolean",
             "title": "Reused",
             "default": false
+          },
+          "is_subscription": {
+            "type": "boolean",
+            "title": "Is Subscription",
+            "default": false
           }
         },
         "type": "object",
@@ -1754,6 +1759,18 @@
               }
             ],
             "title": "Label"
+          },
+          "is_subscription": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Subscription",
+            "description": "Флаг подписки (True для автопродления)"
           }
         },
         "type": "object",
