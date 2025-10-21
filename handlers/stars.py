@@ -89,7 +89,10 @@ async def _handle_duplicate_payment(message: Message, username: str) -> None:
 
 def _build_invoice_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_back")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐️ Оплатить", pay=True)],
+            [InlineKeyboardButton(text="⬅️ Главное меню", callback_data="menu_back")],
+        ]
     )
 
 
