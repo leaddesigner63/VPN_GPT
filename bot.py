@@ -7,7 +7,7 @@ import os
 from datetime import UTC, datetime
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Callable, Deque, Dict, Sequence
+from typing import Any, Awaitable, Callable, Deque, Dict, Sequence
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -383,6 +383,46 @@ class _QrLinkStorage:
 _qr_links = _QrLinkStorage()
 
 
+class _SingleMessageManager:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._messages: dict[int, int] = {}
+
+    async def send(
+        self,
+        source: Message,
+        sender: Callable[[], Awaitable[Message]],
+        *,
+        keep_history: bool = False,
+    ) -> Message:
+        chat_id = source.chat.id
+        async with self._lock:
+            previous_id = self._messages.get(chat_id)
+            if not keep_history and previous_id is not None:
+                try:
+                    await bot.delete_message(chat_id, previous_id)
+                except Exception:
+                    logger.debug(
+                        "Failed to delete previous bot message",
+                        extra={"chat_id": chat_id, "message_id": previous_id},
+                    )
+            message = await sender()
+            if not keep_history:
+                self._messages[chat_id] = message.message_id
+            return message
+
+    async def remember(self, message: Message) -> None:
+        async with self._lock:
+            self._messages[message.chat.id] = message.message_id
+
+    async def forget(self, chat_id: int) -> None:
+        async with self._lock:
+            self._messages.pop(chat_id, None)
+
+
+_single_messages = _SingleMessageManager()
+
+
 class _QrCleanupMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):  # type: ignore[override]
         chat_id: int | None = None
@@ -681,12 +721,29 @@ async def edit_message_text_safe(
 ) -> bool:
     if message.text == text and _markups_equal(message.reply_markup, reply_markup):
         return False
-    await message.edit_text(text, reply_markup=reply_markup)
+    updated = await message.edit_text(text, reply_markup=reply_markup)
+    if isinstance(updated, Message):
+        await _single_messages.remember(updated)
+    else:  # pragma: no cover - defensive branch for unexpected return types
+        await _single_messages.remember(message)
     return True
 
 
 def _get_history(chat_id: int) -> ConversationHistory:
     return _histories[chat_id]
+
+
+async def send_single_message(
+    message: Message,
+    text: str,
+    *,
+    keep_history: bool = False,
+    **kwargs: Any,
+) -> Message:
+    async def _send() -> Message:
+        return await message.answer(text, **kwargs)
+
+    return await _single_messages.send(message, _send, keep_history=keep_history)
 
 
 def _remember_exchange(chat_id: int, user_text: str, reply: str) -> None:
@@ -1068,6 +1125,7 @@ setup_stars_handlers(
         mark_payment_pending=mark_star_payment_pending,
         mark_payment_fulfilled=mark_star_payment_fulfilled,
         list_pending_payments=list_pending_star_payments,
+        send_single_message=send_single_message,
         logger=logger,
     ),
 )
@@ -1173,7 +1231,7 @@ async def handle_start(message: Message, state: FSMContext) -> None:
         "2️⃣ Следуй инструкции и подключи приложение.\n"
         "3️⃣ Выбери тариф и пользуйся без ограничений."
     )
-    await message.answer(greeting, reply_markup=build_main_menu())
+    await send_single_message(message, greeting, reply_markup=build_main_menu())
 
 
 @dp.callback_query(F.data == MENU_BACK)
@@ -1527,7 +1585,7 @@ async def process_ai_device(message: Message, state: FSMContext) -> None:
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
     )
     next_question = questions[1]
-    await message.answer(next_question, reply_markup=keyboard)
+    await send_single_message(message, next_question, reply_markup=keyboard)
     await state.set_state(AiFlow.region)
 
 
@@ -1542,7 +1600,7 @@ async def process_ai_region(message: Message, state: FSMContext) -> None:
         inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data=CANCEL_AI)]]
     )
     next_question = questions[2]
-    await message.answer(next_question, reply_markup=keyboard)
+    await send_single_message(message, next_question, reply_markup=keyboard)
     await state.set_state(AiFlow.preferences)
 
 
@@ -1587,13 +1645,21 @@ async def process_ai_preferences(message: Message, state: FSMContext) -> None:
         )
 
     keyboard = build_ai_keyboard(None, username, message.chat.id, user.username)
-    await message.answer("\n".join(response_parts), reply_markup=keyboard)
+    await send_single_message(
+        message,
+        "\n".join(response_parts),
+        reply_markup=keyboard,
+    )
 
 
 @dp.message(Command("help"))
 async def command_help(message: Message):
     await _delete_previous_qr(message.chat.id)
-    await message.answer(build_help_text(), reply_markup=build_back_menu())
+    await send_single_message(
+        message,
+        build_help_text(),
+        reply_markup=build_back_menu(),
+    )
 
 
 def _parse_command_arguments(text: str) -> list[str]:
@@ -1608,7 +1674,10 @@ async def command_stars_transactions(message: Message):
     await _delete_previous_qr(message.chat.id)
     user = message.from_user
     if not _is_admin_user(message, from_user=user):
-        await message.answer("Команда доступна только администраторам.")
+        await send_single_message(
+            message,
+            "Команда доступна только администраторам.",
+        )
         return
 
     args = _parse_command_arguments(message.text or "")
@@ -1621,12 +1690,15 @@ async def command_stars_transactions(message: Message):
         result = await _call_telegram_method("getStarTransactions", {"limit": limit})
     except Exception as exc:
         logger.exception("Failed to fetch star transactions", extra={"error": str(exc)})
-        await message.answer("Не удалось получить транзакции из Telegram. Проверьте логи.")
+        await send_single_message(
+            message,
+            "Не удалось получить транзакции из Telegram. Проверьте логи.",
+        )
         return
 
     transactions = result.get("transactions") if isinstance(result, dict) else result
     if not transactions:
-        await message.answer("Транзакции не найдены.")
+        await send_single_message(message, "Транзакции не найдены.")
         return
 
     lines: list[str] = []
@@ -1648,7 +1720,7 @@ async def command_stars_transactions(message: Message):
         lines.append(f"#{tx_id} · {amount} · {purpose} · {status} · {created}")
 
     response = "Последние транзакции:\n" + "\n".join(lines)
-    await message.answer(response)
+    await send_single_message(message, response)
 
 
 @dp.message(Command("stars_refund"))
@@ -1656,24 +1728,36 @@ async def command_stars_refund(message: Message):
     await _delete_previous_qr(message.chat.id)
     user = message.from_user
     if not _is_admin_user(message, from_user=user):
-        await message.answer("Команда доступна только администраторам.")
+        await send_single_message(
+            message,
+            "Команда доступна только администраторам.",
+        )
         return
 
     args = _parse_command_arguments(message.text or "")
     if not args:
-        await message.answer("Использование: /stars_refund <charge_id>")
+        await send_single_message(
+            message,
+            "Использование: /stars_refund <charge_id>",
+        )
         return
 
     charge_id = args[0].strip()
     if not charge_id:
-        await message.answer("Укажите идентификатор платежа (charge_id).")
+        await send_single_message(
+            message,
+            "Укажите идентификатор платежа (charge_id).",
+        )
         return
 
     try:
         await _call_telegram_method("refundStarPayment", {"charge_id": charge_id})
     except Exception as exc:
         logger.exception("Failed to refund Stars payment", extra={"charge_id": charge_id, "error": str(exc)})
-        await message.answer("Не удалось выполнить рефанд через Telegram. Проверьте логи.")
+        await send_single_message(
+            message,
+            "Не удалось выполнить рефанд через Telegram. Проверьте логи.",
+        )
         return
 
     record = await get_star_payment_by_charge(charge_id)
@@ -1688,7 +1772,10 @@ async def command_stars_refund(message: Message):
         if username:
             await revoke_access_after_refund(username, plan_code)
 
-    await message.answer("Рефанд Stars инициирован. Статус: успешно.")
+    await send_single_message(
+        message,
+        "Рефанд Stars инициирован. Статус: успешно.",
+    )
 
 
 @dp.message(Command("stars_stats"))
@@ -1696,7 +1783,10 @@ async def command_stars_stats(message: Message):
     await _delete_previous_qr(message.chat.id)
     user = message.from_user
     if not _is_admin_user(message, from_user=user):
-        await message.answer("Команда доступна только администраторам.")
+        await send_single_message(
+            message,
+            "Команда доступна только администраторам.",
+        )
         return
 
     args = _parse_command_arguments(message.text or "")
@@ -1730,7 +1820,7 @@ async def command_stars_stats(message: Message):
         f"• Отменено: {canceled_count}",
         f"• Ошибки выдачи: {failed_count}",
     ]
-    await message.answer("\n".join(lines))
+    await send_single_message(message, "\n".join(lines))
 
 
 @dp.message()

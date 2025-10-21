@@ -41,6 +41,7 @@ class StarHandlerDependencies:
     mark_payment_pending: Callable[[int, str | None], Awaitable[dict | None]]
     mark_payment_fulfilled: Callable[[int], Awaitable[dict | None]]
     list_pending_payments: Callable[[str], Awaitable[list[dict]]]
+    send_single_message: Callable[..., Awaitable[Message]]
     logger: logging.Logger
 
 
@@ -81,7 +82,7 @@ async def _handle_duplicate_payment(message: Message, username: str) -> None:
     await deps.delete_previous_qr(message.chat.id)
     text = "⭐️ Этот платёж уже обработан. Открой раздел «Мои ключи», чтобы увидеть актуальный доступ."
     markup = deps.build_result_markup(None)
-    await message.answer(text, reply_markup=markup)
+    await deps.send_single_message(message, text, reply_markup=markup)
 
 
 def _build_invoice_markup() -> InlineKeyboardMarkup:
@@ -117,9 +118,10 @@ async def _deliver_payment(
         )
         if payment_record.get("id") is not None:
             await deps.mark_payment_pending(int(payment_record["id"]), error=str(exc))
-        await message.answer(
+        await deps.send_single_message(
+            message,
             "⭐️ Оплата получена, но сейчас выдача доступа задерживается. "
-            "Мы пришлём ключ, как только сервис восстановится."
+            "Мы пришлём ключ, как только сервис восстановится.",
         )
         return False
 
@@ -129,7 +131,11 @@ async def _deliver_payment(
     title = "⭐️ Доступ активирован!"
     text, link = deps.format_key_info(api_payload, username, title)
     await deps.delete_previous_qr(chat_id)
-    await message.answer(text, reply_markup=deps.build_result_markup(link))
+    await deps.send_single_message(
+        message,
+        text,
+        reply_markup=deps.build_result_markup(link),
+    )
     if link:
         clean_link = link.strip()
         if clean_link:
@@ -187,7 +193,11 @@ async def handle_star_purchase(callback: CallbackQuery) -> None:
             "⭐️ Открой ссылку ниже, чтобы оформить подписку. "
             "После оплаты мы мгновенно выдадим доступ."
         )
-        await message.answer(message_text, reply_markup=_build_invoice_link_markup(link))
+        await deps.send_single_message(
+            message,
+            message_text,
+            reply_markup=_build_invoice_link_markup(link),
+        )
         deps.logger.info(
             "Sent Stars invoice link",
             extra={"plan": plan.code, "chat_id": chat_id},
@@ -255,7 +265,10 @@ async def handle_successful_payment(message: Message) -> None:
     plan, is_subscription = _resolve_plan(plan_code)
     if plan is None:
         deps.logger.error("Received Stars payment for unknown plan", extra={"payload": payload})
-        await message.answer("⭐️ Платёж принят, но тариф не распознан. Поддержка уже уведомлена.")
+        await deps.send_single_message(
+            message,
+            "⭐️ Платёж принят, но тариф не распознан. Поддержка уже уведомлена.",
+        )
         return
 
     user = message.from_user
