@@ -137,13 +137,18 @@ def _build_plan(code: str, price: int, *, subscription: bool = False) -> StarPla
 def load_star_settings() -> StarSettings:
     enabled = _parse_bool(os.getenv("STARS_ENABLED"), True)
     price_test = _parse_int("STARS_PRICE_TEST", 20)
-    price_month = _parse_int("STARS_PRICE_MONTH", 120)
-    if os.getenv("STARS_PRICE_6M") is None and os.getenv("STARS_PRICE_3M") is not None:
-        price_6m = _parse_int("STARS_PRICE_3M", 200)
+    price_month = _parse_int("STARS_PRICE_MONTH", 80)
+
+    legacy_6m = os.getenv("STARS_PRICE_6M")
+    explicit_3m = os.getenv("STARS_PRICE_3M")
+    if explicit_3m is None and legacy_6m is not None:
+        price_3m = _parse_int("STARS_PRICE_6M", 200)
+        price_6m = 0
     else:
-        price_6m = _parse_int("STARS_PRICE_6M", 600)
-    price_3m = _parse_int("STARS_PRICE_3M", 0)
-    price_year = _parse_int("STARS_PRICE_YEAR", 1100)
+        price_3m = _parse_int("STARS_PRICE_3M", 200)
+        price_6m = _parse_int("STARS_PRICE_6M", 0)
+
+    price_year = _parse_int("STARS_PRICE_YEAR", 700)
     subscription_enabled = _parse_bool(os.getenv("STARS_SUBSCRIPTION_ENABLED"), False)
 
     plans: Dict[str, StarPlan] = {}
