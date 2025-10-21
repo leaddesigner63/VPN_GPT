@@ -114,6 +114,7 @@ PAYMENTS_PUBLIC_TOKEN = os.getenv("PAYMENTS_PUBLIC_TOKEN")
 PAYMENTS_DEFAULT_SOURCE = os.getenv("PAYMENTS_DEFAULT_SOURCE", "site")
 
 PLAN_DURATIONS = {
+    "test_1d": 1,
     "1m": 30,
     "3m": 90,
     "12m": 365,

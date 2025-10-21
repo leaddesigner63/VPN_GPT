@@ -27,7 +27,7 @@ def _force_due(db_module, key_uuid: str) -> None:
         )
 
 
-def test_scheduler_sends_three_notifications(tmp_path, monkeypatch):
+def test_scheduler_sends_single_notification(tmp_path, monkeypatch):
     db_module, notifications = _prepare_modules(tmp_path, monkeypatch)
 
     db_module.schedule_renewal_notification(
@@ -57,32 +57,13 @@ def test_scheduler_sends_three_notifications(tmp_path, monkeypatch):
     record = db_module.get_renewal_notification("uuid-123")
     assert record is not None
     assert record["stage"] == 1
-    assert record["completed"] == 0
+    assert record["completed"] == 1
     assert sent_messages == [(555, "message-1")]
 
     _force_due(db_module, "uuid-123")
-    assert scheduler.run_once() == 1
-
-    record = db_module.get_renewal_notification("uuid-123")
-    assert record["stage"] == 2
-    assert record["completed"] == 0
-
-    _force_due(db_module, "uuid-123")
-    assert scheduler.run_once() == 1
-
-    record = db_module.get_renewal_notification("uuid-123")
-    assert record["stage"] == 3
-    assert record["completed"] == 1
-
-    assert calls == [(1, "uuid-123"), (2, "uuid-123"), (3, "uuid-123")]
-    assert sent_messages == [
-        (555, "message-1"),
-        (555, "message-2"),
-        (555, "message-3"),
-    ]
-
-    _force_due(db_module, "uuid-123")
     assert scheduler.run_once() == 0
+
+    assert calls == [(1, "uuid-123")]
 
 
 def test_scheduler_recovers_from_generation_error(tmp_path, monkeypatch):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,10 @@ def configure_test_xray(tmp_path, monkeypatch):
     monkeypatch.setenv("XRAY_SERVICE", "xray-test")
     monkeypatch.setenv("GPT_API_KEY", os.getenv("GPT_API_KEY", "test-key"))
     monkeypatch.setenv("RENEWAL_NOTIFICATION_GPT_API_KEY", os.getenv("RENEWAL_NOTIFICATION_GPT_API_KEY", "test-key"))
+
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 
     from api.utils import xray as xray_module
 

@@ -39,6 +39,13 @@ def test_expired_key_monitor_deactivates_and_syncs(tmp_path, monkeypatch):
         label="bob@example.com",
     )
 
+    monkeypatch.setenv("VLESS_HOST", "test.example")
+    monkeypatch.setenv("VLESS_PORT", "2053")
+    monkeypatch.setenv("BOT_PAYMENT_URL", "https://vpn-gpt.store/pay")
+    monkeypatch.setenv("ADMIN_PANEL_PASSWORD", "panelpass")
+    monkeypatch.setenv("ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("INTERNAL_TOKEN", "admin")
+
     from api.utils.expired_keys import ExpiredKeyMonitor
 
     monitor = ExpiredKeyMonitor(interval_seconds=0.01)

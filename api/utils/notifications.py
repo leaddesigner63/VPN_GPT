@@ -8,9 +8,11 @@ from typing import Any, Awaitable, Callable, Sequence
 
 from openai import OpenAI
 
+from api import config
 from api.utils import db
 from api.utils.logging import get_logger
 from api.utils.telegram import send_message as telegram_send_message
+from utils.stars import StarPlan, StarSettings
 
 logger = get_logger("renewal.notifications")
 
@@ -49,25 +51,11 @@ _DEFAULT_NOTIFICATION_INTERVAL_HOURS = _parse_float_env("RENEWAL_NOTIFICATION_IN
 _DEFAULT_NOTIFICATION_RETRY_HOURS = _parse_float_env("RENEWAL_NOTIFICATION_RETRY_HOURS", 1.0)
 _DEFAULT_BATCH_SIZE = max(1, _parse_int_env("RENEWAL_NOTIFICATION_BATCH_SIZE", 10))
 
-_STAGE_GUIDANCE: dict[int, str] = {
-    1: (
-        "Это первое напоминание. Сохраняй дружелюбный тон, напомни о ценности VPN_GPT "
-        "и сделай мягкий призыв вернуться к безопасному подключению."
-    ),
-    2: (
-        "Это второе сообщение. Усли преимущества сервиса, добавь социальное доказательство "
-        "и предложи быстрый сценарий возврата (кнопка оплаты, помощь в настройке)."
-    ),
-    3: (
-        "Это финальное сообщение. Усиль срочность и страх упустить защиту, подчеркни, что "
-        "поддержка готова помочь с оплатой прямо сейчас."
-    ),
-}
-
 _DEFAULT_SYSTEM_PROMPT = (
-    "Ты — маркетолог сервиса VPN_GPT. Пиши по-русски, в тёплом деловом стиле, "
-    "не более 4 коротких абзацев. Добавляй эмодзи только когда они усиливают мысль, "
-    "и всегда завершай явным призывом оплатить или продлить подписку."
+    "Ты — продуктовый маркетолог сервиса VPN_GPT. Пиши по-русски, дружелюбно и "
+    "ненавязчиво, укладываясь максимум в три коротких абзаца без списков. Эмодзи "
+    "используй лишь при явной пользе и обязательно заверши мягким призывом выбрать "
+    "тариф или оплатить доступ."
 )
 
 
@@ -93,6 +81,7 @@ class RenewalNotificationGenerator:
         model: str | None = None,
         system_prompt: str | None = None,
         payment_url: str | None = None,
+        star_settings: StarSettings | None = None,
     ) -> None:
         if client is None:
             resolved_key = api_key or os.getenv("RENEWAL_NOTIFICATION_GPT_API_KEY") or os.getenv("GPT_API_KEY")
@@ -104,25 +93,63 @@ class RenewalNotificationGenerator:
         self._system_prompt = system_prompt or os.getenv("RENEWAL_NOTIFICATION_SYSTEM_PROMPT") or _DEFAULT_SYSTEM_PROMPT
         raw_payment_url = payment_url or os.getenv("BOT_PAYMENT_URL") or "https://vpn-gpt.store/payment.html"
         self._payment_url = raw_payment_url.rstrip("/")
+        self._star_settings = star_settings or config.STAR_SETTINGS
+
+    def _plan_lookup(self) -> tuple[StarPlan | None, StarPlan | None, list[StarPlan]]:
+        settings = self._star_settings
+        test_plan = settings.plans.get("test_1d")
+        month_plan = settings.plans.get("1m")
+        excluded = {plan.code for plan in (test_plan, month_plan) if plan is not None}
+
+        ordered_codes = [code for code in ("3m", "12m", "1y") if code not in excluded]
+        extras: list[StarPlan] = []
+        for code in ordered_codes:
+            plan = settings.plans.get(code)
+            if plan and plan not in extras:
+                extras.append(plan)
+        for plan in settings.available_plans():
+            if plan.code in excluded:
+                continue
+            if plan in extras or plan.is_subscription:
+                continue
+            extras.append(plan)
+        return test_plan, month_plan, extras
+
+    @staticmethod
+    def _format_plan(plan: StarPlan) -> str:
+        return f"{plan.title} — {plan.price_stars}⭐"
 
     def build_prompt(self, stage: int, job: NotificationJob) -> list[dict[str, str]]:
-        stage_number = max(1, min(stage, db.RENEWAL_NOTIFICATION_STAGE_COUNT))
-        guidance = _STAGE_GUIDANCE.get(stage_number, _STAGE_GUIDANCE[3])
         username = job.username or "друг"
         expires_at = job.expires_at or "уже закончилась"
         payment_url = self._payment_url
+        test_plan, month_plan, extra_plans = self._plan_lookup()
+
+        plan_lines: list[str] = []
+        if test_plan:
+            plan_lines.append(
+                f"Тестовый доступ ({test_plan.title.lower()}) длится 24 часа и стоит {test_plan.price_stars}⭐."
+            )
+        if month_plan:
+            plan_lines.append(
+                f"Месячный доступ теперь стоит {month_plan.price_stars}⭐ — цена уже обновлена."
+            )
+        if extra_plans:
+            extras = ", ".join(self._format_plan(plan) for plan in extra_plans)
+            plan_lines.append(f"Другие тарифы без изменений: {extras}.")
+        if not plan_lines:
+            plan_lines.append("Доступ можно продлить через Telegram Stars — оплата занимает пару кликов.")
+
+        facts = "\n".join(f"- {line}" for line in plan_lines)
         user_content = (
-            "Сгенерируй текст уведомления для клиента Telegram. "
-            "Формат — лаконичные абзацы без маркеров.\n"
-            f"Имя клиента (если есть): {username}.\n"
-            f"Подписка закончилась: {expires_at}.\n"
-            f"Ссылка на оплату: {payment_url}.\n"
-            f"Номер уведомления: {stage_number} из {db.RENEWAL_NOTIFICATION_STAGE_COUNT}.\n"
-            f"Задача этапа: {guidance}\n"
-            "Обязательно:\n"
-            "- подчеркни выгоды VPN_GPT и что доступ можно вернуть за пару кликов;\n"
-            "- добавь понятный CTA с ссылкой на оплату;\n"
-            "- упомяни, что поддержка готова помочь продлить или оплатить."
+            "Сформируй продающее, но деликатное сообщение для клиента Telegram.\n"
+            f"Имя клиента (если известно): {username}.\n"
+            f"Доступ закончился: {expires_at}.\n"
+            f"Оплата доступна по ссылке: {payment_url}.\n"
+            "Ключевые факты:\n"
+            f"{facts}\n"
+            "- Оплата проходит через Telegram Stars в пару кликов — предложи удобный сценарий.\n"
+            "- Подчеркни выгоды сервиса VPN_GPT и готовность помочь с настройкой или оплатой."
         )
         return [
             {"role": "system", "content": self._system_prompt},

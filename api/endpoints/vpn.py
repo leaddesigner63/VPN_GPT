@@ -81,29 +81,11 @@ def issue_key(request: IssueKeyRequest, _: None = Depends(require_service_token)
         logger.info("Returning existing active key", extra={"username": username})
         return _build_key_response(existing, reused=True)
 
-    if not request.trial or config.TRIAL_DAYS <= 0:
-        logger.info("Trial disabled", extra={"username": username})
-        return _json_error("trial_unavailable", status_code=status.HTTP_409_CONFLICT)
-
-    if db.user_has_trial(username):
-        logger.info("User already consumed trial", extra={"username": username})
-        return _json_error("trial_already_used", status_code=status.HTTP_409_CONFLICT)
-
-    expires_at = dt.datetime.now(dt.UTC).replace(microsecond=0) + dt.timedelta(days=config.TRIAL_DAYS)
-    uuid_value = str(uuid.uuid4())
-    label = request.label or f"VPN_GPT_{username}"
-    link = build_vless_link(uuid_value, label)
-    payload = db.create_vpn_key(
-        username=username,
-        chat_id=request.chat_id,
-        uuid_value=uuid_value,
-        link=link,
-        expires_at=expires_at,
-        label=label,
-        country=request.country or config.DEFAULT_COUNTRY,
-        trial=True,
+    logger.info(
+        "Trial issuance disabled; paid activation required",
+        extra={"username": username, "chat_id": request.chat_id},
     )
-    return _build_key_response(payload)
+    return _json_error("trial_unavailable", status_code=status.HTTP_409_CONFLICT)
 
 
 def _resolve_duration(plan: str | None, days: int | None) -> tuple[int, str | None]:
